@@ -11,7 +11,7 @@ After building the Elf 2000 almost 20 years ago, I decided it was time for anoth
 
 I ended up splitting the design into two boards, a "base" board and an expansion board.  Originally I planned to fit it all onto a single board but that ended up being too large and two boards, which can be stacked in the vertical dimension, are much more practical.  The expannsion board is optional and the base board is functional without it.  Also, the expansion bus is available for additional future, well, expansion.
 
-##BASE BOARD
+## BASE BOARD
 
 The base board contains -
 
@@ -32,7 +32,7 @@ The base board contains -
   The base board can be used and is functional without the CDP1877 interrupt controller; after all, neither ElfOS nor MicroDOS actually use interrupts of any kind.  Likewise the base board is functional without the CDP1879 real time clock too, however you'll lose the ability to have the OS time set automatically.
 
 
-##EXPANSION BOARD
+## EXPANSION BOARD
 
 When installed on the base board, the expansion board adds -
 
