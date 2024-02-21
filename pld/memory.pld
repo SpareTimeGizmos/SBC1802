@@ -1,0 +1,234 @@
+/*++									*/
+/* memory.pld - Spare Time Gizmos SBC1802 Memory Mapper GAL		*/
+/*									*/
+/*   Copyright (C) 2021 by Robert Armstrong, Milpitas, California.	*/
+/*									*/
+/*  This program is free software; you can redistribute it and/or	*/
+/* modify it under the terms of the GNU General Public License as	*/
+/* published by the Free Software Foundation; either version 2 of the	*/
+/* License, or (at your option) any later version.			*/
+/*									*/
+/*  This program is distributed in the hope that it will be useful, but	*/
+/* WITHOUT ANY WARRANTY; without even the implied warranty of		*/
+/* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU	*/
+/* General Public License for more details.				*/
+/*									*/
+/*   You should have received a copy of the GNU General Public License	*/
+/* along with this program; if not, write to the Free Software		*/
+/* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111 USA.	*/
+/*                                                                      */
+/* DESCRIPTION								*/
+/*   The SBC1802 hardware has two 32K SRAM chips, called RAM0 and RAM1,	*/
+/* plus one 32K EPROM chip.  There is a memory control register (aka	*/
+/* MCR), which implements three bits that control the active memory	*/
+/* map.  This GAL takes the address bits and the memory control bits,	*/
+/* and generates the chip selects for the RAMs and EPROM.		*/
+/*									*/
+/*   The goal is to be able to run both MicroDOS and ElfOS, which have	*/
+/* very different memory layouts. The OS selection is made at boot time	*/
+/* and it is possible to run either OS without any hardware changes (no	*/
+/* jumpers moved; no GALs reprogrammed, etc).  It's also desirable to	*/
+/* have as much RAM available to either OS as is practical, certainly	*/
+/* more than just 32K.  PLUS, the plan is to stuff a hacked up version	*/
+/* of the STG EPROM monitor, which will require most of a 32K EPROM.	*/
+/*									*/
+/*    The following five memory maps, selectable by the MCR, cover all	*/
+/* the cases (with a little additional software magic) ...		*/
+/*									*/
+/* FFFF  +-------+    +-------+    +-------+    +-------+    +-------+	*/
+/*       | EPROM |    | EPROM |    |       |    |       |    |       |	*/
+/* F000  +-------+    +-------+    |       |    |       |    |       |	*/
+/*       |       |    |       |    |       |    |       |    |       |	*/
+/*       | RAM 1 |    |       |    | EPROM |    | EPROM |    | EPROM |	*/
+/*       |       |    | RAM 1 |    |       |    |       |    |       |	*/
+/* 8400  +-------+    |       |    |       |    |       |    |       |	*/
+/*       | EPROM |    |       |    |       |    |       |    |       |	*/
+/* 8000  +-------+    +-------+    +-------+    +-------+    +-------+	*/
+/*       |       |    |       |    |       |    |       |    |       |	*/
+/*       |       |    |       |    |       |    |       |    |       |	*/
+/*       |       |    |       |    |       |    |       |    |       |	*/
+/*       | RAM 0 |    | RAM 0 |    | RAM 0 |    | RAM 1 |    | EPROM |	*/
+/*       |       |    |       |    |       |    |       |    |       |	*/
+/*       |       |    |       |    |       |    |       |    |       |	*/
+/*       |       |    |       |    |       |    |       |    |       |	*/
+/* 0000  +-------+    +-------+    +-------+    +-------+    +-------+	*/
+/*       MICRODOS       ELFOS        ROM0         ROM1         BOOT	*/
+/*	 			     		  	       		*/
+/*   The MicroDOS and ElfOS maps are for running those respective	*/
+/* operating systems.  Note that it's not necessary to have the EPROM	*/
+/* mapped from 0xF000 to 0xFFFF for MicroDOS but it is convenient, at	*/
+/* the expense of chopping 4K off the MicroDOS address space.  The ROM0	*/
+/* and ROM1 maps are used when the STG monitor is in control, and it's	*/
+/* necessary to have two maps so that the EPROM can access all of user	*/
+/* RAM.  The BOOT map is used only after an 1802 RESET so that the	*/
+/* EPROM can get control.     	   	    	       	       		*/
+/*									*/
+/*   BUT ... it can never be quite that simple.  One is that the STG	*/
+/* EPROM needs some RAM that it can call its own, and another is that	*/
+/* the SBC1802 contains two memory mapped peripharals. Both the CDP1877	*/
+/* priority interrupt controller (aka PIC) and the CDP1879 real time 	*/
+/* clock (aka RTC) are memory mapped. And lastly the memory control	*/
+/* register itself is mapped into a memory location, mostly because of	*/
+/* I/O limitations on the SBC1802 base board.				*/
+/*									*/
+/*  All these devices exist in the 0xF000 to 0xFFFF BIOS range, but the	*/
+/* BIOS also has a lot of code that must be at fixed locations, notably	*/
+/* in pages $F8xx and $FFxx.  Here's a more detailed layout of the BIOS	*/
+/* memory region ...  	      	       	    	     	       	   	*/
+/*									*/
+/*   F000..F7FF -> mapped to EPROM (general BIOS code)			*/
+/*   F800..F8FF -> mapped to EPROM (BIOS entry vectors)			*/
+/*   F900..FDFF -> mapped to EPROM (general BIOS code)			*/
+/*   FE00..FEDF -> mapped to RAM1 (STG monitor scratch pad area)	*/
+/*   FEE0..FEE6 -> not mapped (do not use!)    	       	   		*/
+/*   FEE7       -> memory control register				*/
+/*   FEE8..FEEF -> mapped to CDP1879 RTC registers			*/
+/*   FEF0..FEF3 -> mapped to CDP1877 PIC mask/status registers		*/
+/*   FEF4..FEF7 -> mapped to CDP1877 PIC control/polling registers	*/
+/*   FEF8..FEFB -> mapped to CDP1877 PIC page/vector registers		*/
+/*   FEFC..FEFF -> not mapped (do not use!)	     			*/
+/*   FF00..FFFF -> mapped to EPROM (more BIOS vectors, checksum, etc)	*/
+/*   		   	     	   	      	       		 	*/
+/*   Note that this BIOS region, addresses $Fxxx, is mapped exactly the	*/
+/* same in ALL memory modes.  In particular, the scratch pad RAM, PIC,	*/
+/* RTC and especially the MCR, are still accessible in ROM0, ROM1 and	*/
+/* BOOTSTRAP modes.   	       	   	 	       	     	  	*/
+/*									*/
+/*   One final comment - there is no address mapping hardware. The MCR	*/
+/* simply controls which RAM/EPROM chip is selected by which address	*/
+/* range.  That means, for example, that address 0x0000 in the BOOT map	*/
+/* will address the same EPROM location as 0x8000.  Likewise, the RAM1 	*/
+/* address, say, 0xA123 in the MICRODOS or ELFOS maps becomes address	*/
+/* 0x2123 in the ROM1 map. The EPROM firmware just has to deal with it.	*/
+/*									*/
+/* REVISION HISTORY							*/
+/* 14-AUG-21	RLA	New file.					*/
+/*--									*/
+NAME		MEMORY;
+PARTNO		MEMORY;
+REVISION	A;
+DATE		08/16/21;
+DESIGNER	Robert Armstrong;
+COMPANY		Spare Time Gizmos;
+ASSEMBLY	SBC1802;
+LOCATION	U8;
+DEVICE		V750C;
+
+
+/* INPUTS... */
+PIN  1 = TPA;			/* clock for the high address byte	*/
+PIN  9 = A0;			/* multiplexed address bit 0/8		*/
+PIN  8 = A1;			/*   "    "     "   "   "  1/9		*/
+PIN  7 = A2;			/*   "    "     "   "   "  0/10		*/
+PIN  6 = A3;			/*   "    "     "   "   "  3/11		*/
+PIN  5 = A4;			/*   "    "     "   "   "  4/12		*/
+PIN  4 = A5;			/*   "    "     "   "   "  5/13		*/
+PIN  3 = A6;			/*   "    "     "   "   "  6/14		*/
+PIN  2 = A7;			/*   "    "     "   "   "  7/15		*/
+PIN 10 = MMAP0;			/* memory control register bit 0	*/
+PIN 11 = MMAP1;			/*  "  "   "   "   "    "   "  1	*/
+PIN 13 = MMAP2;			/*  "  "   "   "   "    "   "  2 (boot)	*/
+
+
+/* OUTPUTS... */
+PIN 23 =  PIC_CS_H;		/* CDP1877 (PIC) chip select high	*/
+PIN 22 =  PIC_CS_L;		/*  "   "    "     "     "   low	*/
+PIN 21 =  PIC_AX;		/*  "   "    "   address bit 1		*/
+PIN 20 =  PIC_AY;		/*  "   "    "    "   "   "  0		*/
+PIN 19 = !CS_ROM;		/* EPROM chip enable			*/
+PIN 17 = !CS_RAM0;		/* SRAM #1 chip enable			*/
+PIN 18 = !CS_RAM1;		/*   "  #2   "     "			*/
+PIN 16 =  CS_RTC;		/* CDP1879 real time clock enable	*/
+/*PIN 15 = unused*/
+PIN 14 = !CS_MCR;		/* memory mapping register select	*/
+
+
+/* BURIED NODES... */
+/*   One catch about the ATF750 is that the buried nodes share product	*/
+/* terms with the associated pin, so if you use both a buried node and	*/
+/* a pin then the pterms available to each are cut in half!  We assign	*/
+/* the buried nodes carefully so that the pins with the most associated	*/
+/* logic - CS_ROM and CS_RAM1 - don't have to share.	     		*/
+PINNODE [25,26,27,28,31,32,33,34] = [A8..A15];
+
+/*  The high order address byte is latched by TPA, and A15..A8 together	*/
+/* with the A7..A0 inputs form the complete 16 bit address.  Note that	*/
+/* data should be latched on the falling edge of TPA, however the V750	*/
+/* F-Fs are positive edge clocked, hence the !TPA below...		*/
+[A15..A8].d  = [A7..A0];  [A15..A8].ck = !TPA;
+[A15..A8].ar = 'B'0;      [A15..A8].sp = 'B'0;
+FIELD A = [A15..A0];
+
+
+/*   Define the MCR bits and the various memory map modes.  Note that	*/
+/* the BOOTSTRAP is a separate signal externally, but as far as we're	*/
+/* concerned it's just another bit in the MCR.  More importantly, note	*/
+/* that BOOTSTRAP is always SET by a hardware reset!			*/
+FIELD MAP = [MMAP2..MMAP0];
+$DEFINE ROM0	    MAP:'B'000	/* EPROM high, RAM0 low			*/
+$DEFINE ROM1	    MAP:'B'001	/* EPROM high, RAM1 low			*/
+$DEFINE MICRODOS    MAP:'B'010	/* EPROM at $8000, RAM everywhere else	*/
+$DEFINE ELFOS	    MAP:'B'011	/* BIOS at $Fxxx, RAM everywhere else	*/
+$DEFINE BOOTSTRAP   MAP:'B'1xx	/* EPROM mapped both high and low	*/
+
+
+/*   Handle all the special exceptions in the BIOS range, except for	*/
+/* the PIC (which is really ugly and we'll deal with it later).	 	*/
+SCRATCH_PAGE = A:'H'FExx;		/* hole to carve in EPROM	*/
+SCRATCH_RAM  = A:['H'FE00..'H'FEDF];	/* STG monitor scratch RAM	*/
+CS_MCR       = A:'H'FEE7;		/* memory control register	*/
+CS_RTC       = A:['H'FEE8..'H'FEEF];	/* real time clock		*/
+	       				/* PIC is assigned to 'H'FEFx	*/
+
+/*   RAM0 is easy - it's selected by any address in the lower half of	*/
+/* memory in any of the MICRODOS, ELFOS or ROM0 modes.  Any other time,	*/
+/* it's deselected...		  	   		    	  	*/
+CS_RAM0 =  A:['H'0000..'H'7FFF] & (MICRODOS # ELFOS # ROM0);
+
+
+/*   RAM1 is harder - it's basically selected for the upper half of	*/
+/* memory, but we have to carve out holes for the UT71 ROM in MICRODOS	*/
+/* mode, and for the BIOS in all modes.  It is also selected for the	*/
+/* lower half of memory in ROM1 mode, and for the STG scratch pad area	*/
+/* in ALL modes. 	   	      	      	      	      	  	*/
+CS_RAM1 = (A:['H'8400..'H'EFFF] & MICRODOS)
+	# (A:['H'8000..'H'EFFF] & ELFOS)
+	# (A:['H'0000..'H'7FFF] & ROM1)
+        # SCRATCH_RAM;
+
+
+/*   And lastly, the EPROM is selected for any address in the BIOS	*/
+/* range EXCEPT for the scratch page.  There's also a UT71 ROM "window"	*/
+/* at 0x8000 in MICRODOS mode, and all of the EPROM is selected for the	*/
+/* upper half of memory in ROM0 or ROM1 modes.  Finally, the EPROM is 	*/
+/* always selected everywhere in BOOTSTRAP mode...	    	  	*/
+CS_ROM  = (A:['H'F000..'H'FFFF] & !SCRATCH_PAGE)
+        # (A:['H'8000..'H'83FF] & MICRODOS)
+        # (A:['H'8000..'H'EFFF] & (ROM0 # ROM1 # BOOTSTRAP))
+        # (A:['H'0000..'H'7FFF] & BOOTSTRAP);
+
+
+/*   The CDP1877 PIC is something of an enigma.  According to RCA it's	*/
+/* supposed to be interfaced directly to the 1802 and they expect you	*/
+/* to allocate an entire 4K address space, at 0xFxxx, to it.  And all	*/
+/* that for a device that only has three byte wide registers!  That's a	*/
+/* little too wasteful for my taste, and David Madole, Todd Ferguson	*/
+/* and others on the COSMAC Elf list have come up with some hacks.	*/
+/*									*/
+/*   In essence, at TPA time the PIC wants to see the CS_H, AX and AY	*/
+/* inputs HIGH and the CS_L input low.  It latches this status on the	*/
+/* trailing edge of TPA. Then later, during the actual MWR or MRD time,	*/
+/* the PIC wants to see anything other than AX=AY=1 (i.e. both can't	*/
+/* be asserted).  If AX=AY=1 then the chip is not selected.  		*/
+/*									*/
+/*   So the game here is to drive CS_H with [A3..A0]=0xE, and CS_L with	*/
+/* [A4..7]=0xF.  This selects the chip whenever the upper address byte	*/
+/* is 0xFExx.  Then during MRD/MWR time, the AX and AY inputs are both	*/
+/* forced to ones IF the high order nibble is NOT 0xF.  This deselects	*/
+/* the chip for any addresses not of the form 0xFEFx. 	   		*/
+/*									*/
+/*   At least I hope so...						*/
+PIC_CS_H = A3 & A2 & A1 & !A0;
+PIC_CS_L = !(A4 & A5 & A6 & A7);
+PIC_AX   = PIC_CS_L # A3;
+PIC_AY   = PIC_CS_L # A2;

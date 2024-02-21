@@ -1,0 +1,103 @@
+#++
+# help.txt - Help text for the Spare Time Gizmos SBC1802 Firmware
+#
+# Copyright (C) 2006-2021 by Spare Time Gizmos.  All rights reserved.
+#
+# This firmware is free software; you can redistribute it and/or modify it
+# under the terms of the GNU General Public License as published by the Free
+# Software Foundation; either version 2 of the License, or (at your option)
+# any later version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+# FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+# more details.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+# Place, Suite 330, Boston, MA  02111-1307  USA
+#
+#DESCRIPTION:
+#   This text file is the source for the Elf 2000 monitor help that's stored
+# in the EPROM image.  It's what you get when you type the monitor "HELP"
+# command.  This file is converted to a .HEX image by the romtext program
+# and then merged into the EPROM image by rommerge.
+#
+#IMPORTANT!
+#   Lines which begin with a "#" are comments and are completely discarded by
+# the romtext program, up to and including the newline at the end.  EVERYTHING
+# ELSE, including spaces, tabs, newlines, EVERYTHING, gets put into the EPROM!
+#
+# REVISION HISTORY:
+# dd-mmm-yy	who     description
+# 19-SEP-21	RLA	New file (well, stolen from the ELf2K)
+# 20-FEB-24	RLA	Change SHOW IDE to SHOW DISK, add SHOW TAPE
+#--
+MEMORY AND I/O COMMANDS
+    Examine address		-- examine one byte
+    Examine start end		-- dump a range of bytes
+    Deposit address data ...	-- deposit data in memory
+    INput port [group]		-- read data from an I/O port
+    OUtput port data [group]	-- write data to an I/O port
+    :llaaaattdddd..cc		-- load an INTEL hex record
+
+PROGRAM CONTROL COMMANDS
+    CAll [address]		-- CALL an application program w/SCRT (P=3)
+    RUn [address]		-- RUN an application program (P=0)
+    CONTinue			-- continue after a break point
+
+DISK MANAGEMENT COMMANDS
+    DU nnnnn			-- dump disk blocks
+    Boot			-- Boot ElfOS OR MicroDOS unit 0
+
+SET COMMANDS
+    SEt Q 0|1			-- set or reset Q output
+    SEt RTC mm/dd/yyyy hh:mm:ss	-- set RTC date and time
+    SEt YEar yyyy		-- update the RTC year only
+    SEt OStype ELFos|MICrodos	-- select the memory map
+    SEt SLU0 bbbbb		-- set the console baud rate
+    SEt SLU1 bbbbb [xYz]	-- set SLU1 baud and format
+    SEt REStart BOOt|NOne	-- set default power up action
+
+SHOW COMMANDS
+    SHow REGisters		-- show registers after a breakpoint
+    SHow DP			-- show monitor data page
+    SHow RTC			-- show current date and time
+    SHow EF group		-- show status of all EF inputs
+    SHow SLU			-- show serial ports baud rate and format
+    SHow CONFiguration		-- show hardware configuration
+    SHow OStype			-- show current memory map selection
+    SHow BATTery		-- show backup battery status
+    SHow DISk			-- show all IDE disk devices
+    SHow TAPe			-- show all TU58 tape devices
+    SHow CPU			-- show CPU type and clock frequency
+    SHow REStart		-- show restart option
+
+TEST COMMANDS
+    TEst RAM0|RAM1		-- exhaustive test of system RAM chips
+
+OTHER COMMANDS
+    HEL[p]			-- print this text
+    ; any text			-- comment command procedures
+    ^C				-- cancel current command line
+    <BREAK>			-- interrupt execution of long commands
+
+POST TESTS AND CODES
+    blank	-- CPU dead, gross hardware failure
+    POST F	-- EPROM checksum failure
+    POST E	-- MCR or memory mapping failure
+    POST D	-- RAM 1 bad
+    POST C	-- RAM 0 bad
+    POST B	-- I/O group select failure
+    POST A	-- CDP1854 SLU0 failure 
+    POST 9	-- CDP1879 RTC failure
+    POST 8	-- CDP1877 PIC failure
+    POST 7	-- CDP1854 SLU1 failure
+    POST 6	-- CDP1851 PPI failure
+    POST 5	-- CDP1878 TIMER failure
+    POST 4	-- CDP1855 MDU failure
+    POST 3	-- AY-3-8912 PSG failure
+    POST 2	-- waiting for autobaud
+    POST 1	-- probing IDE drive(s)
+    POST 0	-- waiting for user input
+    decimal	-- OS booted

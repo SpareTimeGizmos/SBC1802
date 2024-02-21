@@ -1,0 +1,98 @@
+/*++									*/
+/* io.pld - Spare Time Gizmos SBC1802 I/O GAL				*/
+/*									*/
+/*   Copyright (C) 2021 by Robert Armstrong, Milpitas, California.	*/
+/*									*/
+/*  This program is free software; you can redistribute it and/or	*/
+/* modify it under the terms of the GNU General Public License as	*/
+/* published by the Free Software Foundation; either version 2 of the	*/
+/* License, or (at your option) any later version.			*/
+/*									*/
+/*  This program is distributed in the hope that it will be useful, but	*/
+/* WITHOUT ANY WARRANTY; without even the implied warranty of		*/
+/* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU	*/
+/* General Public License for more details.				*/
+/*									*/
+/*   You should have received a copy of the GNU General Public License	*/
+/* along with this program; if not, write to the Free Software		*/
+/* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111 USA.	*/
+/*                                                                      */
+/* DESCRIPTION								*/
+
+/*									*/
+/* REVISION HISTORY							*/
+/* 03-SEP-21	RLA	New file.					*/
+/* 12-SEP-21	RLA	WR_BAUD should be active high!			*/
+/*--									*/
+NAME		IO;
+PARTNO		IO;
+REVISION	B;
+DATE		09/12/21;
+DESIGNER	Robert Armstrong;
+COMPANY		Spare Time Gizmos;
+ASSEMBLY	SBC1802;
+LOCATION	U12;
+DEVICE		G22V10;
+
+
+/* INPUTS... */
+PIN  1 =  CS_GROUP0;		/* master enable for all base board I/O	*/
+PIN  3 = !MRD;			/* CDP1802 memory read strobe 	    	*/
+PIN  2 = !MWR;			/*  "   "   "  "  write  "		*/
+PIN  4 =  TPA;			/*  "   "  timing pulse A		*/
+PIN  5 =  TPB;			/*  "   "   "  "    "   B		*/
+PIN  7 =  N0;			/*  "   "  I/O select bit 0		*/
+PIN  6 =  N1;			/*  "   "   "   "  "   "  1		*/
+PIN  8 =  N2;			/*  "   "   "   "  "   "  2		*/
+/* pins 9, 10, 11, 13 unused */
+
+
+/* OUTPUTS... */
+PIN 14 = !WR_LEDS;		/* diagnostic (POST) LED write strobe	*/
+PIN 20 = !RD_SWITCHES;		/* DIP switches read enable    		*/
+PIN 21 =  WR_BAUD;		/* COM8116 baud rate generator strobe	*/
+PIN 17 = !WR_IDE_CTL;		/* 74HC175 IDE control register write	*/
+PIN 18 = !WR_IDE_DATA;		/* read data from IDE register 		*/
+PIN 19 = !RD_IDE_DATA;		/* write data to IDE register		*/
+PIN 15 =  EXT_IO_IN;		/* enable data in from expansion card	*/
+PIN 22 =  IO_STRETCH;		/* I/O read stretch flip-flop	 	*/
+/* pins 16, 23 unused */
+
+
+/*   IO_STRETCH is a simple SR flip flop that's set by TPA and cleared	*/
+/* by TPB.  This lets us stretch the usual CDP1802 I/O read time to	*/
+/* almost 8 clock cycles, which is nearly an eternity. Once we have IO_	*/
+/* STRETCH signal we can generate the IORD and IOWR signals.  Remember	*/
+/* that on the 1802 an I/O read is a memory write, and an I/O write is	*/
+/* a memory read.  Note that these signals are only valid when N != 0,	*/
+/* and you must include some kind of N decoding in any logic.   	*/
+IO_STRETCH = (!IO_STRETCH & TPA)  #  (IO_STRETCH & !TPB);
+IORD = ((IO_STRETCH & !TPA) # TPB) & !MRD;
+IOWR = TPB & MRD;
+
+
+/*   Now we can decode all the I/O chip selects we need.  Note that	*/
+/* there is no chip select for the CDP1854 UART - that's not a mistake;	*/
+/* the UART has enough inputs to decode GROUP0 and ports 2/3 without	*/
+/* any help from us.  Also note that port 1 is reserved for the I/O	*/
+/* group select implemented on the expansion card.  Nothing else should	*/
+/* respond to port 1.	       	   	     	    	    	 	*/
+FIELD N=[N2..N0];
+WR_LEDS     = IOWR & CS_GROUP0 & N:'D'4;
+RD_SWITCHES = IORD & CS_GROUP0 & N:'D'4;
+WR_IDE_CTL  = IOWR & CS_GROUP0 & N:'D'5;
+WR_IDE_DATA = IOWR & CS_GROUP0 & N:'D'6;
+RD_IDE_DATA = IORD & CS_GROUP0 & N:'D'6;
+WR_BAUD     = IOWR & CS_GROUP0 & N:'D'7;
+
+
+/*   The only thing left to deal with is EXT_IO_IN, which controls the	*/
+/* the direction of the data bus buffers between the base and expansion	*/
+/* cards.  Normally this buffer drives our data out, but when EXT_IO_IN	*/
+/* is asserted then data from the expansion card is drive onto our bus.	*/
+/* THis is true any time we 1) have an I/O read, 2) N is not 0, and 3) 	*/
+/* CS_GROUP0 is NOT asserted, OR for any I/O read when N=1. The special	*/
+/* case for N=1 is needed so we can read the I/O group register on the	*/
+/* expansion card regardless of what I/O group is selected!	   	*/
+EXT_IO_IN = (IORD & (N0#N1#N2) & !CS_GROUP0)
+	  # (IORD &  N:'D'1    &  CS_GROUP0);
