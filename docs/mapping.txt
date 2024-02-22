@@ -1,0 +1,40 @@
+  The SBC1802 is capable of running both MicroDOS and ElfOS.  The OS selection is made at boot time and it is possible to run either OS without any hardware changes (e.g. no jumpers moved; no GALs reprogrammed, etc).  There is as much RAM available to either OS as is practical, 60K for ElfOS and 58K for MicroDOS.  The hardware has two 32K SRAM chips, RAM0 and RAM1, plus one 32K EPROM.  There is a memory control register which implements a couple of bits that the software can write to change the active memory map.  A GAL takes the address bits, the memory control bits, and generates the chip selects for the RAMs and EPROM.  This is done with the following five memory maps, software selectable via the memory control register.
+
+FFFF	+-------+	+-------+	+-------+	+-------+	+-------+
+    	| EPROM |	| EPROM +	|       |	|       |	|       |
+F000	+-------+	+-------+	|       |	|       |	|       |
+    	|       |	|       |	|       |	|       |	|       |
+    	| RAM 1 |	|       |	| EPROM |	| EPROM |	| EPROM |
+    	|       |	| RAM 1 |	|       |	|       |	|       |
+8800	+-------+	|       |	|       |	|       |	|       |
+    	| EPROM |	|       |	|       |	|       |	|       |
+8000	+-------+	+-------+	+-------+	+-------+	+-------+
+    	|       |	|       |	|       |	|       |	|       |
+    	|       |	|       |	|       |	|       |	|       |
+    	|       |	|       |	|       |	|       |	|       |
+    	| RAM 0 |	| RAM 0 |	| RAM 0 |	| RAM 1 |	| EPROM |
+    	|       |	|       |	|       |	|       |	|       |
+    	|       |	|       |	|       |	|       |	|       |
+    	|       |	|       |	|       |	|       |	|       |
+0000	+-------+	+-------+	+-------+	+-------+	+-------+
+	MICRODOS	  ELFOS		  ROM0		  ROM1		  BOOT
+
+  The MicroDOS and ElfOS maps are for running those operating systems, respectively.  Note that it's not necessary to have the EPROM mapped from 0xF000 to 0xFFFF for MicroDOS but it's convenient at the expense of chopping 4K off the MicroDOS address space.  The ROM0 and ROM1 maps are used when the STG monitor is in control; it's necessary to have two maps so that the EPROM can access all of user RAM.  The BOOT map is used only after an 1802 RESET so that the EPROM can get control.
+
+  Finally, there is no address mapping hardware - the memory control simply controls which RAM/EPROM chip is selected by which address range.  That means, for example, that address 0x0000 in the BOOT map will address the same EPROM location as 0x8000.  Likewise, RAM1 address, say, 0xA123 in the MICRODOS or ELFOS maps becomes address 0x2123 in the ROM1 map.  The EPROM firmware will just have to deal with that.
+
+
+DETAILED MAP OF UPPER MEMORY
+----------------------------
+$F000..$F7FF -> mapped to EPROM (general BIOS code)
+$F800..$F8FF -> mapped to EPROM (BIOS entry vectors)
+$F900..$FDFF -> mapped to EPROM (general BIOS code)
+$FE00..$FEDF -> mapped to RAM1 (STG monitor scratch pad area)
+$FEE0..$FEE6 -> not mapped (do not use!)
+$FEE7        -> memory control register
+$FEE8..$FEEF -> mapped to CDP1879 RTC registers
+$FEF0..$FEF3 -> mapped to CDP1877 PIC mask/status registers
+$FEF4..$FEF7 -> mapped to CDP1877 PIC control/polling registers
+$FEF8..$FEFB -> mapped to CDP1877 PIC page/vector registers
+$FEFC..$FEFF -> not mapped (do not use!)
+$FF00..$FFFF -> mapped to EPROM (more BIOS vectors, checksum, etc)
