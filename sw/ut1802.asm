@@ -1,6 +1,6 @@
-; NEED LOADER (AKA BOOTSTRAP) AT $8400...
 	.TITLE	 UT71 Emulation for Spare Time Gizmos SBC1802
 ;	 Bob Armstrong [06-OCT-2021]
+; NEED LOADER (AKA BOOTSTRAP) AT $8400...
 
 ;               db    db d888888b  db .d888b.  .d88b.  .d888b. 
 ;               88    88 `~~88~~' o88 88   8D .8P  88. VP  `8D 
@@ -63,8 +63,7 @@ VERMAJ	.EQU	0	; major version number
 VERMIN	.EQU	0	; minor   "  "    "
 VEREDT	.EQU	0	; and the edit level
 
-	.EJECT
-;	.SBTTL	Memory Layout, SCRT and Register Usage
+	.SBTTL	"Memory Layout, SCRT and Register Usage"
 
 ;++
 ; MEMORY LAYOUT
@@ -96,13 +95,13 @@ VEREDT	.EQU	0	; and the edit level
 ;
 ; SCRT
 ; ----
-;   The UT71 ROM has its standard call annd return routines and, although they
+;   The UT71 ROM has its standard call and return routines and, although they
 ; are pretty close to the ElfOS BIOS versions, they're not identical.  The
 ; stack, PC and CALL/RETURN register usage is exactly the same, however the
 ; ElfOS BIOS versions preserve D across CALL and RETURN by using RE.0 as
 ; temporary storage.  The UT71 versions don't save D and, worse, there are
 ; several UT71 routines that expect to pass or return a value in RE.0.  These
-; are all READ and TYPE routines, oSTRNG, and CKHEX.  The good news is that
+; are all READ and TYPE routines, OSTRNG, and CKHEX.  The good news is that
 ; they all expect to return a character in RE.0, and we can achieve the same
 ; result with the ElfOS SCRT simply by returning the character in D.
 ;
@@ -173,8 +172,7 @@ VEREDT	.EQU	0	; and the edit level
 #defcont		\	.echo "VECTOR ERROR FOR vec\n"
 #defcont		\#endif
 
-	.EJECT
-;	.SBTTL	Console Input Functions
+	.SBTTL	"Console Input Functions"
 
 ;++
 ;--
@@ -235,8 +233,7 @@ FND:	ANI $0F\ STXD		; SAVE TEMPORARILY
 	SDF			; SET DF = 1
 	BR	REXIT
 
-	.EJECT
-;	.SBTTL	Console Output Functions
+	.SBTTL	"Console Output Functions"
 
 ;++
 ;--
@@ -302,8 +299,7 @@ HEX2:	SMI	$C6		; ELSE ADD NET 30
 HEX3:	STXD			; AND SAVE
 	BR	BEGIN
 
-	.EJECT
-;	.SBTTL	Miscellaneous TBA
+	.SBTTL	"Miscellaneous TBA"
 
 	.ORG	UTBASE+$02AD
 
@@ -318,8 +314,7 @@ MSGE1:	LDA A\ PHI P1
 	BR	MSGE1
 EXITM:	RETURN
 
-	.EJECT
-;	.SBTTL	SCRT CALL and RETURN, INIT1, and INIT2
+	.SBTTL	"SCRT CALL and RETURN, INIT1, and INIT2"
 
 ;++
 ;--
@@ -365,8 +360,7 @@ ENTER2:
 	LDI HIGH(UTSTACK)\ PHI SP
 	SEX SP\ SEP PC
 
-	.EJECT
-;	.SBTTL	Floppy Diskette Emulation
+	.SBTTL	"Floppy Diskette Emulation"
 
 ;++
 ; DISKETTE EMULATION
@@ -444,8 +438,7 @@ ENTER2:
 ; ROUTINES
 ; --------
 
-	.EJECT
-;	.SBTTL	SEEKST and SEEKA
+	.SBTTL	"SEEKST and SEEKA"
 
 ;++
 ;   The SEEKST routine takes a pointer to a parameter block in P1, and it
@@ -591,8 +584,7 @@ UNIOFF:	.WORD	 0*MO.SPD
 	.WORD	14*MO.SPD
 	.WORD	15*MO.SPD
 
-	.EJECT
-;	.SBTTL	READTR/WRITTR, READST/WRITST, and READA/WRITA
+	.SBTTL	"READTR/WRITTR, READST/WRITST, and READA/WRITA"
 
 ;++
 ;   There are six routines, three sets of read/write pairs, that do diskette
@@ -627,8 +619,7 @@ READTR:
 WRITTR:
 READA:
 WRITA:
-	.EJECT
-;	.SBTTL	RECAL, CMD, WAIT and other floppy routines
+	.SBTTL	"RECAL, CMD, WAIT and other floppy routines"
 
 
 ; RECALIBRATE (a NOP for the CF card) ...
@@ -651,8 +642,7 @@ CMD:	RETURN
 ; USES CRC DMA CYCLE TO CLEAR DMA REOUEST IN CASE OF SERIOUS OVER-RUN.
 WAIT:	RETURN
 
-	.EJECT
-;	.SBTTL	Entry Vectors
+	.SBTTL	"Entry Vectors"
 
 	.ORG	UTBASE+$03F0
 	UENTRY(OSTRNG) \ LBR MSGE

@@ -1,4 +1,4 @@
-;	.TITLE	 Run Time Library for Spare Time Gizmos SBC1802
+	.SBTTL	 "Standard BIOS Run Time Library"
 
 ;        d8888b. d888888b db       db .d888b.  .d88b.  .d888b. 
 ;        88  `8D `~~88~~' 88      o88 88   8D .8P  88. VP  `8D 
@@ -68,8 +68,7 @@
 ;0000000001111111111222222222233333333334444444444555555555566666666667777777777
 ;1234567890123456789012345678901234567890123456789012345678901234567890123456789
 
-	.EJECT
-;	.SBTTL	Hexadecimal Conversions
+	.SBTTL	"Hexadecimal Conversions"
 
 ; *********************************************
 ; *** Convert a binary number to hex output ***
@@ -174,8 +173,7 @@ tobinglp:  stxd
 tobindn:   dec     rf                  ; move back to terminating character
            RETURN                      ; return to caller
 
-	.EJECT
-;	.SBTTL	Decimal Conversions
+	.SBTTL	"Decimal Conversions"
 
 ; *** rf - pointer to ascii string
 ; *** returns: rf - first non-numeric character
@@ -369,7 +367,7 @@ intout2go:
         inc     rf
         RETURN                  ; return to caller
 
-;	.SBTTL	String Functions
+	.SBTTL	"String Functions"
 
 ; **** Strcmp compares the strings pointing to by R(D) and R(F)
 ; **** Returns:
@@ -424,8 +422,7 @@ memcpy1: lda    rf           ; get byte from source
          dec    rc           ; decrement count
          lbr    memcpy       ; and continue copy
 
-	.EJECT
-;	.SBTTL	Lexical functions
+	.SBTTL	"Lexical functions"
 
 ; ********************************
 ; *** See if D is alphabetic   ***
@@ -503,8 +500,7 @@ isterm:    CALL(isalnum)               ; see if alphanumeric
            lbdf    fails               ; fails if so
            lbr     passes
 
-	.EJECT
-;	.SBTTL	16 Bit Multiply and Divide
+	.SBTTL	"16 Bit Multiply and Divide"
 
 ; *** RC:RB = RF * RD (RB is low word)
 ; *** R(X) must point to suitable stack
@@ -635,8 +631,7 @@ divno:     ghi     rd                  ; get hi of divisor
            plo     r8
            lbr     divst               ; next iteration
 
-	.EJECT
-;	.SBTTL	Date and Time Functions
+	.SBTTL	"Date and Time Functions"
 
 ; ************************************
 ; *** Convert packed date to ascii ***
@@ -796,8 +791,7 @@ is_sec: CALL(atoi)              ; convert seconds
 dterr:  smi     0               ; signal an error
         lbr     get_rd          ; recover RD and return
 
-	.EJECT
-;	.SBTTL	Identify Symbol Type
+	.SBTTL	"Identify Symbol Type"
 
 ; ***********************************************
 ; *** identify symbol as decimal, hex, or non ***
@@ -846,8 +840,7 @@ iddec:     ldi     0                   ; signal decimal number
 idhex:     ldi     1                   ; signal hex number
            lbr     idnumyes            ; and return
 
-	.EJECT
-;	.SBTTL	Search symbol table
+	.SBTTL	"Search symbol table"
 
 ; ******************************************
 ; *** Check if symbol is in symbol table ***
@@ -910,38 +903,33 @@ tflast:    lda     r7                  ; get byte from token
            smi     0                   ; signal match found
            lbr     tfreturn            ; and return
 
-	.EJECT
-; 	.SBTTL
+ 	.SBTTL	"Check for Valid Boot Loader"
 
 ; ***********************************
 ; *** Check for valid boot loader ***
 ; ***   Return DF=0 if valid      ***
 ; ***********************************
-btcheck:   ldi     1                   ; point to boot code
-           phi     rf
-           ldi     0
-           plo     rf
-           ldi     041h                ; number of bytes to check
-           plo     rc
-           ldi     0                   ; setup initial value
-           plo     rd
-           sex     rf                  ; point X to boot code
-btchk_lp:
-           glo     rd                  ; get value
-           add                         ; add in next byte
-           irx                         ; move pointer
-           shl                         ; shift high byte into DF
-           shr                         ; move bits back
-           shlc                        ; ring shift now done
-           plo     rd                  ; save value
-           dec     rc                  ; decrement byte count
-           glo     rc                  ; see if done
-           lbnz    btchk_lp            ; loop back if not
-           sex     r2                  ; point X back to stack
-           glo     rd                  ; get number
-           smi     060h                ; check against check value
-           lbnz    btcerr              ; jump on mismatch to error
-           adi     0                   ; DF=0 to signal good
-           RETURN                      ; and return
-btcerr:    smi     0                   ; DF=1 if invalid bootstrap
-           RETURN
+btcheck:   ldi 1\ phi rf\ phi rc    ; rf = $100 (boot sector)
+           ldi 0\ plo rf            ; ...
+           ldi $ff\ plo rc          ; rc = 511 ($1FF) byte count
+           str       r2             ; set initial checksum to $FF
+btcloop:   lda       rf             ; get next byte from sector
+           add                      ; add to previous byte
+           plo       re             ; ring shift check value
+           shl
+           glo       re
+           shlc                     ; ring shift complete
+           str       r2             ; place back on stack
+           dec       rc             ; decrement count
+           glo       rc             ; see if done
+           lbnz      btcloop        ; loop until done
+           ghi       rc
+           lbnz      btcloop
+           ldn       rf             ; retrieve check byte
+           sm                       ; compare to computed value
+           lbnz      btcfail        ; jump if failed
+           adi       0              ; signal success
+           RETURN                   ; and return
+btcfail:   ldx                      ; retrieve computed value
+           smi       0              ; signal failure
+           RETURN                   ; and return to caller

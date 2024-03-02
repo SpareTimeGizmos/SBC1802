@@ -32,6 +32,7 @@
 # dd-mmm-yy	who     description
 # 19-SEP-21	RLA	New file (well, stolen from the ELf2K)
 # 20-FEB-24	RLA	Change SHOW IDE to SHOW DISK, add SHOW TAPE
+#  1-MAR-24	RLA	Add TEST PSG, update SET [NO]RESTART
 #--
 MEMORY AND I/O COMMANDS
     Examine address		-- examine one byte
@@ -46,9 +47,10 @@ PROGRAM CONTROL COMMANDS
     RUn [address]		-- RUN an application program (P=0)
     CONTinue			-- continue after a break point
 
-DISK MANAGEMENT COMMANDS
-    DU nnnnn			-- dump disk blocks
-    Boot			-- Boot ElfOS OR MicroDOS unit 0
+MASS STORAGE COMMANDS
+    DUmp ddd nnnnn		-- dump block nnnnn from storage device ddd
+    Boot ddd			-- Boot mass storage device ddd
+    FORMAT ddd			-- format (zero out) storage device ddd
 
 SET COMMANDS
     SEt Q 0|1			-- set or reset Q output
@@ -57,7 +59,9 @@ SET COMMANDS
     SEt OStype ELFos|MICrodos	-- select the memory map
     SEt SLU0 bbbbb		-- set the console baud rate
     SEt SLU1 bbbbb [xYz]	-- set SLU1 baud and format
-    SEt REStart BOOt|NOne	-- set default power up action
+    SEt REStart ddd		-- auto boot from device ddd on power up
+    SEt REStart xxxx		-- start program at $xxxx on power up
+    SEt NOREStart		-- power up to this monitor
 
 SHOW COMMANDS
     SHow REGisters		-- show registers after a breakpoint
@@ -75,12 +79,19 @@ SHOW COMMANDS
 
 TEST COMMANDS
     TEst RAM0|RAM1		-- exhaustive test of system RAM chips
+    TEst PSG			-- test the AY-3-8912 sound generator
 
 OTHER COMMANDS
     HEL[p]			-- print this text
     ; any text			-- comment command procedures
     ^C				-- cancel current command line
     <BREAK>			-- interrupt execution of long commands
+
+STORAGE DEVICE NAMES
+    ID0	- IDE/ATA master disk drive
+    ID1 - IDE/ATA slave disk drive
+    TU0 - TU58 (serial disk) unit 0
+    TU1 - TU58 (serial disk) unit 1
 
 POST TESTS AND CODES
     blank	-- CPU dead, gross hardware failure

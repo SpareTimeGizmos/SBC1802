@@ -1,11 +1,7 @@
-; Make SET RESTART work for any unit ID0/1 TU0/1
+	.TITLE	"Spare Time Gizmos COSMAC Microsystem"
+;	.SBTTL	"Bob Armstrong [09-SEP-2021]"
+
 ; Make sure the echo flag in BAUD.1 is turned on when there's a trap or power up!
-; Should we change our BIOS version to be compatible with Mike's?
-; Add DUMP command to dump disk blocks/sectors
-; FFFF->0000 roll over problem with exam
-; Remove F_CALL and F_RETURN symbols from bios.inc, but first fix code at INIREGS: in here!
-	.TITLE	 "Firmware for the Spare Time Gizmos COSMAC Microsystem"
-;	 Bob Armstrong [09-SEP-2021]
 
 
 ;    .d8888b.  888888b.    .d8888b.   d888   .d8888b.   .d8888b.   .d8888b.  
@@ -34,26 +30,123 @@
 ; with this program; if not, write to the Free Software Foundation, Inc.,
 ; 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 ;--
-
-;++
-; SOME TEXT HERE TO DESCRIBE THE SBC1802 AND THIS FIRMWARE!!
-;--
 ;0000000001111111111222222222233333333334444444444555555555566666666667777777777
 ;1234567890123456789012345678901234567890123456789012345678901234567890123456789
 
 	.MSFIRST \ .PAGE \ .CODES
 
-;;	.NOLIST
+	.NOLIST
 	.INCLUDE "sbc1802.inc"	; SBC1802 hardware and environment definitions
 	.INCLUDE "bios.inc"	; Mike's BIOS entry points and declarations
 	.INCLUDE "ut71.inc"	; RCA's UT71 entry points and declarations
-;;;	.INCLUDE "fdisk.inc"	; Disk partition and partition editor
 	.LIST
-	
-	.EJECT
+
+	.SBTTL	"The SBC1802"
+
 ;++
-; REVISION HISTORY
+; OVERVIEW
+;   After building the Elf 2000 almost 20 years ago, I decided it was time for
+; another 1802 based project. The primary goal of the Elf2K was to be as much
+; like the original Elf as possible, however this time around the goals were
+; entirely different.
 ;
+; My plan was to design a machine that
+;
+;    * could run both ElfOS and RCA MicroDOS
+;    * used as many of the LSI RCA CDP18xx family chips as possible
+;    * supported multiple peripherals and mass storage devices
+;
+;   I ended up splitting the design into two boards, a "base" board and an
+; expansion board. Originally I planned to fit it all onto a single board but
+; that ended up being too large and two boards, which can be stacked in the
+; vertical dimension, are much more practical. The expannsion board is optional
+; and the base board is functional without it. Also, the expansion bus is
+; available for additional future, well, expansion.
+;
+; BASE BOARD
+;
+; The base board contains -
+;
+;    * CDP1805 CPU (an 1802 will work too)
+;    * 32K EPROM and 64K battery backed up SRAM
+;    * CDP1877 priority interrupt controller
+;    * CDP1854 UART with CTS/RTS support and programmable baud rate
+;    * CDP1879 real time clock with battery backup
+;    * IDE/ATA interface
+;    * POST display
+;    * buffered expansion bus for the expansion card(s)
+;    * basic front panel interface
+;
+;   The memory mapping can be programmed at runtime to support either the ElfOS
+; or MicroDOS memory maps; 60K of RAM is available in ElfOS mode and 58K in
+; MicroDOS mode. In addition, all 32K of the EPROM can be used by way of a
+; simple bank switching scheme. The CDP1879 RTC, the CDP1877 PIC, and the memory
+; control register (which controls the memory map/bank switching) are memory
+; mapped and occupy 32 bytes of address space. Another 224 bytes of RAM are set
+; aside for use by the EPROM firmware as scratchpad storage.
+;
+;   The base board also contains logic to drive a basic, "turn key" front panel.
+; Indicators for POWER, RUN, DISK, and Q are included, along with switches or
+; buttons for RESET and ATTENTION. The latter causes a user defined interrupt
+; to occur. By using ribbon cables with a DIP header on one end it would be easy
+; enough to co-opt the the POST display and DIP switches into front panel LED
+; and switch registers. However, note that there is no support for LOAD mode,
+; nor the memory protect function, used in the original Elf.
+;
+;   The base board can be used and is functional without the CDP1877 interrupt
+; controller; after all, neither ElfOS nor MicroDOS actually use interrupts of
+; any kind. Likewise the base board is functional without the CDP1879 real time
+; clock  too, however you'll lose the ability to have the OS time set
+; automatically.
+;
+;EXPANSION BOARD
+;
+; When installed on the base board, the expansion board adds -
+;
+;    * RCA style two level I/O
+;    * Another CDP1854 serial port
+;    * CDP1851 programmable I/O interface
+;    * two CDP1855 multiply/divide units
+;    * CDP1878 dual counter/timer
+;    * AY-3-8912 programmable sound (aka music) generator
+;
+;   The base board alone has no I/O group logic, however when the expansion
+; board is added it implements the standard RCA type two level I/O. With the
+; expansion board present all base board ports are now mapped into group 0 or
+; 1. I/O port #1 is implemented to write or read the I/O group select register.
+;
+;   The second serial interface is essentially identical to the primary SLU on
+; the base board. This one also implements CTS/RTS handshaking and a
+; programmable baud rate and character format.
+;
+;   The CDP1851 is a 24 bit programmable parallel I/O chip with all the I/O
+; pins brought out to a header and are cleverly arranged so that it should be
+; possible to implement a Centronics style parallel port. Alternatively they
+; can be used as general purpose parallel I/Os as well. Likewise all the inputs
+; and outputs for the CDP1878 dual timer/counter are brought out to a header,
+; and/or the timers can also be used to generate CPU interrupts at programmed
+; intervals.
+;
+;   The two CDP1855 MDUs are able to compute a 16x16 multiply or 32/16 divide
+; operation in 16 clock cycles, which about as long as it takes the 1802/5 to
+; execute a single instruction. You just write the desired values to the X and
+; Y registers, do one NOP, and then read the result from the Z register.
+;
+;   The 8912 is a three voice programmable sound chip, including an envelope
+; generator. This particular chip is the same one used in the Elf2K music card
+; to play play simple MIDI tunes, and was super popular in 1980s vintage arcade
+; games and 8 bit microcomputers. Google "chiptunes" for examples of the kinds
+; of sounds it can produce. The three sound voices are mixed to produce left,
+; center and right channels and sent to a stereo headphone jack.
+;
+;   Lastly, the expansion card is functional without one or even all of the
+; specialty chips installed. The CDP1855s, second CDP1854, CDP1878, CDP1851 and
+; the AY3-8912 may all be omitted if you're unable to source them.
+;--
+	
+	.SBTTL	"Revision History"
+
+;++
 ; 001	-- Start by stealing from the Elf2K project!
 ;
 ; 002	-- Create sbc1802.inc; set up the basic startup code and POST framework
@@ -116,13 +209,45 @@
 ;	   new F_SDxxx calls so that it can be shared with "SHOW TAPE".
 ;
 ; 030	-- Add the "SHOW TAPE" command to show TU58 status.
+;
+; 031	-- Make the "BOOT" command with no argument boot the default device.
+;
+; 032	-- At GRPTS9: there's a SEX PC that should be SEX PC0!  THis caused
+;	   hours and hours of head scratching!!!!!
+;
+; 033	-- Add 8912 music player and "TEST PSG" ...
+;
+; 034	-- Fix SHOW EF command so that groups really work (every time we print
+;	   anything the group gets reset to BASEGRP!).
+;
+; 035	-- "E FFF0 FFFF" (or any examine that ends with $FFFF) loops forever!
+;	   Explicitly check for address roll over and quit.
+;
+; 036	-- change our version numbering scheme to just "mm(eeeee)", where mm
+;	   is the major version and eeeee is the edit number. Change the
+;	   BIOS version number the same way.
+;
+; 037	-- show the configuration on boot (after the RTC and IDE) so the
+;	   user will know the POST results
+;
+; 038	-- If two level I/O (and by inference, the expansion board) isn't installed,
+;	   then skip the POSTs for SLU1, PPI, CTC, MDU and PSG ...
+;
+; 039	-- Allow "SET RESTART ddd" to boot from any storage unit.  Implement (it
+;	   wasn't before!) "SET RESTART xxxx".  Change "SET RESTART NONE" to
+;	   "SET NORESTART".
+;
+; 040	-- clean up the baud rate initialization and format setting for both SLUs.
+;	   If no baud rate is saved, autobaud SLU0 and force SLU1 to 9600 8N1.
+;
+; 041	-- Invent TTYINI to set up both SLUs and call it from SYSINI, and also
+; 	   after a breakpoint/trap.  Also, ensure that BAUD.1 gets set to 1 to
+;	   enable echo.
 ;--
 VERMAJ	.EQU	1	; major version number
-VERMIN	.EQU	0	; minor   "  "    "
-VEREDT	.EQU	26	; and the edit level
+VEREDT	.EQU	41	; and the edit level
 
-	.EJECT
-;	.SBTTL	Startup Vectors
+	.SBTTL	"Startup Vectors"
 
 ;   After a reset the SBC1802 starts up with the BOOT memory map selected.  This
 ; maps the EPROM everywhere, both at addresses $0000 and $8000, and so the first
@@ -156,7 +281,7 @@ VEREDT	.EQU	26	; and the edit level
 ;   And lastly the firmware version, name, copyright notice and date all live
 ; at $8008.  These strings should appear at or near to the beginning of the
 ; EPROM, because we don't want them to be hard to find, after all!
-VERSION:.BYTE	(VERMAJ*16)+VERMIN\ .WORD VEREDT
+VERSION:.BYTE	VERMAJ\ .WORD VEREDT
 SYSTEM:	.TEXT	"\r\nSBC1802 FIRMWARE\000"
 RIGHTS:	.TEXT	"Copyright (C) 2021-2024 by Spare Time Gizmos.  All rights reserved.\000"
 #include "sysdat.asm"
@@ -164,8 +289,7 @@ RIGHTS:	.TEXT	"Copyright (C) 2021-2024 by Spare Time Gizmos.  All rights reserve
 ; Skip over the rest of the space used by UT71 ...
 	.ORG	UTBASE+UTSIZE
 
-	.EJECT
-;	.SBTTL	POST Codes
+	.SBTTL	"POST Codes"
 
 ;++
 ;   The following pages (and there are several) of code test the various SBC1802
@@ -190,14 +314,14 @@ RIGHTS:	.TEXT	"Copyright (C) 2021-2024 by Spare Time Gizmos.  All rights reserve
 ; POST B  - I/O group select failure
 ; POST A  - CDP1854 SLU0 failure 
 ; POST 9  - CDP1879 RTC failure
-; POST 8  - CDP1877 PIC failure
-; POST 7  - CDP1854 SLU1 failure
-; POST 6  - CDP1851 PPI failure
-; POST 5  - CDP1878 TIMER failure
-; POST 4  - CDP1855 MDU failure
-; POST 3  - AY-3-8912 PSG failure
-; POST 2  - autobaud??
-; POST 1  - IDE failure
+; POST 8  - CDP1877 PIC tests
+; POST 7  - CDP1854 SLU1 tests
+; POST 6  - CDP1851 PPI tests
+; POST 5  - CDP1878 TIMER tests
+; POST 4  - CDP1855 MDU tests
+; POST 3  - AY-3-8912 PSG tests
+; POST 2  - autobaud
+; POST 1  - IDE tests
 ; POST 0  - waiting for user input
 ; decimal - OS booted
 ;
@@ -210,8 +334,7 @@ RIGHTS:	.TEXT	"Copyright (C) 2021-2024 by Spare Time Gizmos.  All rights reserve
 ;   * Interrupts are disabled.
 ;--
 
-	.EJECT
-;	.SBTTL	POST F - EPROM Test
+	.SBTTL	"POST F - EPROM Test"
 
 ;   We come here shortly after a cold start.  Interrupts have been disabled and
 ; POST code F is currently displayed, however the memory map is still the BOOT
@@ -234,7 +357,6 @@ SYSINI:	POST(POSTF)		; POST F - let the world know we're alive
 ROMCHK:	RCLR(P1)		; checksum from $0000 to $7FFF
 	RCLR(P2)		; and accumulate the checksum in P2
 	SEX	P1		; use P1 to address memory now
-;;LBR RAMOK
 
 ; Read a byte and accumulate a 16 bit checksum in P2...
 ROMCK1: GLO	P2		; get the low byte of the current total
@@ -259,8 +381,7 @@ ROMCK1: GLO	P2		; get the low byte of the current total
 	LBNZ	$		; ...
 
 ; Fall thru into the MCR/mapping test code...
-	.EJECT
-;	.SBTTL	POST E - MCR and Memory Mapping Tests
+	.SBTTL	"POST E - MCR and Memory Mapping Tests"
 
 ;   We know that the EPROM is working but we're still using the BOOT memory map.
 ; The next step is to figure out whether the memory mapping hardware works (more
@@ -339,8 +460,7 @@ MCRTST:	POST(POSTE)		; POST code E - MCR/mapping test
 ; moment.  Totally wasteful, but it looks better when you can see it...
 ;;	DELAY(300)
 
-	.EJECT
-;	.SBTTL	RAM Key Test
+	.SBTTL	"RAM Key Test"
 
 ;   The next step is to figure out whether our private RAM space (at $FExx) is
 ; working AND (assuming we have battery backup) whether the current contents
@@ -374,8 +494,7 @@ KEYTST:	RLDI(P1,KEY)		; P1 points to the RAM key
 ; Here if the current RAM contents are valid...
 	LBR	RAMOK		; skip the RAM test and initialization
 
-	.EJECT
-;	.SBTTL	POST D and C - Basic RAM test
+	.SBTTL	"POST D and C - Basic RAM test"
 
 ;   Now that we know there's nothing in RAM worth keeping, we can do a very
 ; simple but destructive test on both RAM chips.  All this code does is to write
@@ -427,8 +546,7 @@ RAMT31:	LDI 0\ STR P1\ INC P1	; zero another byte
 
 ; Fall into the data page initialization code next ...
 RAMTS4:
-	.EJECT
-;	.SBTTL	Data Page Initialization
+	.SBTTL	"Data Page Initialization"
 
 ;   Here when we're done testing RAM.  The ROM0 mapping is still selected, and
 ; we'll leave it that way for the rest of the POST.  The next step is to zero
@@ -476,8 +594,7 @@ RAMOK:	RLDI(P1,MCR)		; be sure ROM0 is selected
 	RCLR(P4)		; and clear the map of working hardware
 
 ; Now fall into the I/O Group tests ...
-	.EJECT
-;	.SBTTL	POST B - I/O Group Select Tests
+	.SBTTL	"POST B - I/O Group Select Tests"
 
 ;   The next thing is to test whether the I/O group selection register is
 ; present and working.  This hardware is actually part of the expansion board
@@ -494,12 +611,12 @@ GRPTST:	POST(POSTB)		; POST code B - I/O Group Test
 ;   The SBC1802 I/O group register implements six bits, D0 thru D5, although
 ; only D0 thru D3 are actually used.  First we do a basic test to see if the
 ; hardware is present at all ...
-	OUT	IOGROUP		; write %1010 to the group register
-	 .BYTE	 %1010		; ...
+	OUT	GROUP		; write %1010 to the group register
+	 .BYTE	 $0A		; ...
 	SEX	SP		; then read it back
-	INP	IOGROUP		; ...
+	INP	GROUP		; ...
 	ANI	$F		; ...
-	XRI	%1010		; did it work?
+	XRI	$0A		; did it work?
 	LBNZ	NOGRP		; no - assume no hardware present
 
 ;   Looks like there is some kind of I/O group register out there, so go thru
@@ -507,12 +624,12 @@ GRPTST:	POST(POSTB)		; POST code B - I/O Group Test
 ; Note that any failure here is fatal and the POST hangs.  If the I/O group
 ; selection isn't working then we really can't be sure of which devices are
 ; being addressed, so the best plan is to quit while we're ahead.
-	LDI	$F		; start testing with group F and work down
+GRPTS0:	LDI	$0F		; start testing with group F and work down
 GRPTS1:	STR	SP		; ...
-	OUT	IOGROUP		; write the test pattern to the group
+	OUT	GROUP		; write the test pattern to the group
 	DEC SP\ DEC SP		; point to a free stack location
-	INP	IOGROUP		; and try to read back what we wrote
-	ANI	$F		; ignore any extra bits
+	INP	GROUP		; and try to read back what we wrote
+	ANI	$0F		; ignore any extra bits
 	INC	SP		; and point to our original test value
 	XOR			; are they the same?
 	LBNZ	$		; no - spin here forever!
@@ -522,8 +639,8 @@ GRPTS1:	STR	SP		; ...
 
 ;   All done - remember that we have I/O group hardware AND always leave with
 ; group 1 (the base board group) selected ...
-	SEX	PC		; select the base group
-	OUT	IOGROUP		; ...
+GRPTS9:	SEX	PC0		; select the base group
+	OUT	GROUP		; ...
 	 .BYTE	 BASEGRP	; ...
 	GHI	P4		; remember that group hardware is present
 	ORI	H1.TLIO		; ...
@@ -531,8 +648,7 @@ GRPTS1:	STR	SP		; ...
 
 ; And fall into the next test ...
 NOGRP:
-	.EJECT
-;	.SBTTL	POST A - CDP1854 SLU0 Tests
+	.SBTTL	"POST A - CDP1854 SLU0 Tests"
 
 ;   The next phase in the POST is to test SLU0, the CDP1854 UART that drives the
 ; console terminal port.  The CDP1854 doesn't have a loopback mode and, even
@@ -548,12 +664,10 @@ NOGRP:
 SL0TST:	POST(POSTA)		; POST code A - SLU0 test
 
 ; Initialize the baud rate generator first...
-	LDI	LOW(SLBAUD)	; point to the saved baud rate
-	PLO	DP		; ...
+	LDI LOW(SLBAUD)\ PLO DP	; point to the saved baud rate
 	LDN	DP		; and read it
 	LSNZ			; skip if a baud rate is saved
 	 LDI	 BD.DFLT	; otherwise use the default
-	STR	DP		; update NVR if we used a default
 	SEX SP\ STR SP		; and store the baud rates
 	OUT SLUBRG\ DEC SP	; turn on the baud rate generator
 
@@ -565,7 +679,7 @@ SL0TST:	POST(POSTA)		; POST code A - SLU0 test
 ;   Read the UART status register twice - the first time is just to clear any
 ; error or DA bits that might be left over - and then verify that the THRE and
 ; TSRE bits are set and the FE, PE, OE and DA bits are cleared.  
-	SEX	SP		; point to the stack again
+SL0TS0:	SEX	SP		; point to the stack again
 	INP	SL0BUF		; clear the DA and OE bits
 	INP	SL0STS		; then clear the THRE and TSRE bits
 	NOP			; delay for just an instant
@@ -612,8 +726,7 @@ SL0TS3:	INP	SL0STS		; now wait for TSRE to set too
 	B_SL0IRQ  NOSLU0	; and the IRQ should go away too
 
 ; All done testing the UART. Leave with the IE and TR bits cleared ...
-	SEX	PC0	     	; ...
-	OUT	SL0CTL		; ...
+SL0TS9:	SEX PC0\ OUT SL0CTL	; ...
 	 .BYTE	 SL.8N1		; clear IE and TR, set format 8N1
 	GHI	P4		; set the SLU0 OK bit
 	ORI	H1.SLU0		; ... in the hardware configuration
@@ -622,8 +735,7 @@ SL0TS3:	INP	SL0STS		; now wait for TSRE to set too
 
 ; Fall into the next test ...
 NOSLU0:
-	.EJECT
-;	.SBTTL	POST 9 - CDP1879 Real Time Clock Tests
+	.SBTTL	"POST 9 - CDP1879 Real Time Clock Tests"
 
 ;   Now test the CDP1879 real time clock chip.  Remember that this chip is
 ; memory mapped at address RTCBASE, so neither I/O instructions nor the I/O
@@ -672,8 +784,7 @@ RTCTS2:	LDI	RT.STRT+RT.O32	; turn off the square wave output
 
 ; Fall into the PIC test ...
 NORTC:
-	.EJECT
-;	.SBTTL	POST 8 - CDP1877 Programmable Interrupt Controller Tests
+	.SBTTL	"POST 8 - CDP1877 Programmable Interrupt Controller Tests"
 
 ;   The next test is for the CDP1877 priority interrupt controller, aka PIC.
 ; Like the RTC and MCR, this device is memory mapped.  Worse, it does not have
@@ -841,9 +952,27 @@ PICTST:	POST(POST8)		; POST 8 - CDP1877 PIC tests
 
 ; Fall into the next test ...
 NOPIC:
-	.EJECT
-;	.SBTTL	POST 7 - CDP1854 SLU1 Tests
 
+	.SBTTL	"Expansion Board Tests"
+
+;++
+;   The next group of POSTs - SLU1, parallel interface, Counter/Timer, 
+; Multiply/Divide unit, and the programmable sound generator - are
+; all expansion board device.  Before we start testing them we need to
+; see if the two level I/O and the expansion board is even installed.
+; If it isn't, then without the group select hardware some of these
+; tests can have bad side effects on base board hardware (e.g. the
+; SLU1 test will screw up the base board SLU0!).  
+;
+;  If there's no two level I/O, then skip directly to SYSINI2...
+;--
+EXPTST:	GHI	P4		; get the hardware flags
+	ANI	H1.TLIO		; was two level I/O discovered?
+	LBZ	SYSIN2		; no - skip all these tests
+
+	.SBTTL	"POST 7 - CDP1854 SLU1 Tests"
+
+;++
 ;   The next phase in the POST is to test SLU1, the CDP1854 UART that drives
 ; the TU58 serial disk (or whatever other peripheral you like).  It's very
 ; similar to the SLU0 test, but somewhat simplified.  A unique complication
@@ -851,35 +980,37 @@ NOPIC:
 ; transmit null characters for testing the TU58 will respond by sending stuff
 ; back to us. That appears in the receiver buffer and can confuse the test.
 ;
-;   To get around this, we set the BREAK bit in the CDP1854 control register
-; before starting the test.  This forces the actual TXD output to the break
-; state, which will force the TU58 to initialize and also suppress anything we
-; transmit during the POST.  After this POST test is done we clear the BREAK
-; bit.
+;   To get around this, we would like to set the BREAK bit in the CDP1854
+; control register and thus suppress anything from reaching the TU58.  We
+; would like to, but we can't!  Turns out that on the CDP1854 the break bit,
+; in addition to forcing TXD low, also inhibits the transmitter completely.
+; THRE, TSRE will not set and bytes written to the THR are ignored as long
+; as the BREAK bit is set.  Bummer!
+;
+;   So we just do our test anyway.  Probably the TU58 will be unhappy, but it
+; will resynchronize as soon as TUINIT is called.
 ;
 ;   Note that the SLU0 code has already initialized the baud rate generator for
 ; SLU1, but we still need to program the UART character format.  That's either
 ; what was stored in the NVR or 8N1 by default.  And remember that SLU1 is on
 ; the expansion board and therefore is NOT in the default I/O group!
+;--
 SL1TST:	POST(POST7)		; POST code 7 - SLU1 test
 
 ; Initialize the CDP1854 control register...
-	SEX	PC0		; first select SLU1 I/O group
-	OUT	IOGROUP		; ...
+	SEX PC0\ OUT GROUP	; first select SLU1 I/O group
 	 .BYTE	 SL1GRP		; ...
-	LDI	LOW(SL1FMT)	; point to the saved format
-	PLO DP \ LDN DP		; and read it
-	LSNZ			; skip if a format is saved
+	LDI LOW(SL1FMT)\ PLO DP	; point to the saved format
+	LDN DP \ LSNZ		; skip if a format is saved
 	 LDI	 SL.8N1		; otherwise use the default
-	STR	DP		; update NVR if we used the default
-	ORI	SL.BRK+SL.IE	; turn on BREAK and IE for testing
+	ORI	SL.IE		; turn on IE for testing
 	SEX SP\ STR SP		; stick it on the stack too
 	OUT SL1CTL\ DEC SP	; program the CDP1854 control register
 
 ;   Read the UART status register twice - the first time is just to clear any
 ; error or DA bits that might be left over - and then verify that the THRE and
 ; TSRE bits are set and the FE, PE, OE and DA bits are cleared.  
-	INP	SL1BUF		; clear the DA and OE bits
+SL1TS0:	INP	SL1BUF		; clear the DA and OE bits
 	INP	SL1STS		; then clear the THRE and TSRE bits
 	NOP			; delay for just an instant
 	INP	SL1STS		; and then read it again
@@ -907,7 +1038,7 @@ SL1TST:	POST(POST7)		; POST code 7 - SLU1 test
 ; Verify that THRE, TSRE and IRQ are now all cleared ...
 	SEX	SP		; ...
 	INP	SL1STS		; read the UART status again
-	ANI	SL.THRE+SL.TSRE	; check both these bits
+	ANI	SL.TSRE+SL.THRE	; check both these bits
 	LBNZ	NOSLU1		; fail if not set
 	B_SL1IRQ  NOSLU1	; there should be no IRQ either
 
@@ -926,13 +1057,13 @@ SL1TS3:	INP	SL1STS		; now wait for TSRE to set too
 ;   Read the receiver buffer one more time to be sure DA and OE are cleared
 ; (since they will also cause an interrupt request) just in case the TU58
 ; managed to send us something.  Then test that the IRQ has gone away.
+	NOP\ NOP\ NOP\ NOP	; give the TU58 a chance
 	INP	SL1BUF		; clear the receiver buffer
 	NOP			; ..
 	B_SL1IRQ  NOSLU1	; and the IRQ should go away too
 
 ; All done testing the UART. Leave with the IE and TR bits cleared ...
-	LDN DP\ STR SP		; get the SL1FMT back again
-	OUT SL1CTL\ DEC SP	; and update the control register
+SL1TS9:	SEX DP\ OUT SL1CTL	; update the control register
 	GLO	P4		; set the SLU1 OK bit
 	ORI	H0.SLU1		; ... in the hardware configuration
 	PLO	P4		; ...
@@ -940,31 +1071,93 @@ SL1TS3:	INP	SL1STS		; now wait for TSRE to set too
 
 ; Fall into the next test ...
 NOSLU1:	SEX	PC0		; restore the default I/O group select
-	OUT	IOGROUP		; ...
-	 .BYTE	 BASEGRP		; ...
+	OUT	GROUP		; ...
+	 .BYTE	 BASEGRP	; ...
 
-	.EJECT
-;	.SBTTL	POST 6 - CDP1851 Parallel Port Tests
+	.SBTTL	"POST 6 - CDP1851 Parallel Port Tests"
 
 ; Fall into the next test ...
 NOPPI:
-	.EJECT
-;	.SBTTL	POST 5 - CDP1878 Timer/Counter Tests
+	.SBTTL	"POST 5 - CDP1878 Timer/Counter Tests"
 
 ; Fall into the next test ...
 NOCTC:
-	.EJECT
-;	.SBTTL	POST 4 - CDP1855 Multiply/Divide Tests
+	.SBTTL	"POST 4 - CDP1855 Multiply/Divide Tests"
 
 ; Fall into the next test ...
 NOMDU:
-	.EJECT
-;	.SBTTL	POST 3 - AY-3-8192 Sound Generator Tests
+	.SBTTL	"POST 3 - AY-3-8192 Sound Generator Tests"
+
+;++
+;   POST 3 tests the AY-3-8912 programmable sound generator, aka the PSG.
+; This device has no less than 16 registers, ALL of which are read/write,
+; but all of them just program the output in various ways.  There are no
+; status bits or anything like that which you can monitor for changes.
+; Everything you read back from a register is just the same as what you
+; wrote there a few moments ago!
+;
+;   That makes a self test kind of challenging, since we have no way to
+; know really whether it is working or not.  The 8910 has two general
+; purpose I/O ports, A and B, which can be programmed as outputs and
+; have no effect on the sound generation.  The 8912 used in the SBC1802
+; only has pins for port A, however internally both registers and ports
+; are still implemented.  It just that on the 8912 only port A is
+; bonded out.
+;
+;  The SBC1802 doesn't use these output pins at all, so we program
+; both ports as outputs and then run thru setting all 256 possible
+; values and reading them back to see if they work.  It's not much
+; of a test for a sound generator, but it at least tells us that the
+; data bus is wired up right.
+;--
+PSGTST:	POST(POST3)		; POST code 3 - PSG test
+	OUT	GROUP		; select the PSG I/O group
+	 .BYTE	PSGGRP		; ...
+	OUT	PSGADDR		; select PSG control register R7
+	 .BYTE	 PSGR7		; ...
+	OUT	PSGDATA		; and program ports A and B as outputs
+	 .BYTE	 $C0		; ...
+	LDI 0\ PLO P1		; start testing with zero
+
+;  Write all 256 possible values to ports A and B ...
+PSGTS1:	SEX PC0\ OUT PSGADDR	; select PSG register R16
+	 .BYTE	 PSGR16		; ... which is port A
+	GLO T1\ STR SP\ SEX SP	; get the test pattern
+	OUT PSGDATA\ DEC SP	; and load port A
+	SEX PC0\ OUT PSGADDR	; now select PSG register R17
+	 .BYTE	 PSGR17		; ... which is port B
+	GLO T1\ XRI $FF\ STR SP	; complement the test pattern
+	OUT PSGDATA\ DEC SP	; ... and load port B
+	INP PSGDATA\ DEC SP	; read back port B
+	SEX PC0\ OUT PSGADDR	; select port A again
+	 .BYTE	 PSGR16		; ...
+	SEX SP\ INP PSGDATA	; and read that
+	INC SP\ ADD\ ADI 1	; they should be complements
+	LBNZ	NOPSG		; no PSG if they're not
+	INC P1\ GLO P1		; have we done 256 passes ?
+	LBNZ	PSGTS1		; keep going until we have
+
+; Here if the PSG is good!
+PSGTS9:	SEX	PC0			; disable the PSG for now
+	OUT PSGADDR\ .BYTE PSGR10	; mute channel A
+	OUT PSGDATA\ .BYTE $00		; ...
+	OUT PSGADDR\ .BYTE PSGR11	; mute channel B
+	OUT PSGDATA\ .BYTE $00		; ...
+	OUT PSGADDR\ .BYTE PSGR12	; mute channel C
+	OUT PSGDATA\ .BYTE $00		; ...
+	OUT PSGADDR\ .BYTE PSGR7	; turn off all mixer inputs
+	OUT PSGDATA\ .BYTE $FF		; ports A and B are outputs
+	GLO	P4		; set the PSG OK bit
+	ORI	H0.PSG		; ... in the hardware configuration
+	PLO	P4		; ...
+	
 
 ; Fall into the next test ...
-NOPSG:
-	.EJECT
-;	.SBTTL	POST 2 - Terminal Initialization
+NOPSG:	SEX	PC0		; restore the default I/O group select
+	OUT	GROUP		; ...
+	 .BYTE	 BASEGRP	; ...
+
+	.SBTTL	"POST 2 - Terminal Initialization"
 
 ;   If the RAM contents are valid and a baud rate has been saved, then we'll
 ; restore that setting now.  Note that the baud rate affects both the console
@@ -990,37 +1183,7 @@ SYSIN2:	POST(POST2)		; display POST code 2
 	LBR	F_INITCALL	; and intialize the SCRT routines
 
 ; See if terminal settings are saved in RAM, and use them if they are ...
-SYSI20:	RLDI(DP,SLBAUD)		; get the baud rates from RAM
-	LDN	DP		; ...
-	LBZ	SYSI21		; branch if it's not set
-	OUTI(IOGROUP,BASEGRP)	; first load the baud rate generator
-	SEX DP\ OUT SLUBRG	; this sets both baud rates
-	OUTI(SL0CTL,SL.8N1)	; always set SLU0 to 8N1
-	LBR	SYSI22		; finish setting up SLU1 and we're done
-
-;   Here if we need to autobaud.  Note that the BIOS will determine and store
-; the the console baud rate at SLBAUD, however it will leave the auxiliary
-; SLU1 baud unchanged.  Since that's not initialized either, we'll force it
-; to 9600.
-SYSI21:	LDI	BD.DFLT		; always set SLU1 to 9600
-	STR	DP		; update SLBAUD
-	LDI	SL.8N1		; set SLU1 to be 8N1 too
-	INC	DP		; update SL1FMT
-	STR	DP		; ...
-	CALL(F_SETBD)		; now autobaud SLU0
-
-;   Set the SLU1 character format according to what's saved at SL1FMT ...
-; BUT, we have to be careful here - if the expansion board isn't installed then
-; the base board doesn't decode I/O groups, and writing to the SLU1 UART will
-; actually write to SLU0!  That's Bad, so test the HW flags to see if the
-; expansion board is present before we do anything ...
-SYSI22:	GHI	P4		; are I/O groups implemented ?
-	ANI	H1.TLIO		; ??
-	LBZ	SYSI23		; nope - skip this
-	OUTI(IOGROUP,SL1GRP)	; now access SLU1
-	OUT	SL1CTL		; send SL1FMT to the control register
-	OUTI(IOGROUP,BASEGRP)	; return to the base board group to be safe
-SYSI23:
+SYSI20:	CALL(TTYINI)		; initialize all the SLU settings
 
 ; Print the system name, firmware and BIOS versions, and checksum...
 	CALL(TCRLF)
@@ -1054,8 +1217,7 @@ SYSI23:
 	CALL(TCRLF)		; and finish the line
 SYSI24:
 
-	.EJECT
-;	.SBTTL	POST 1 - IDE Disk Drive Initialization
+	.SBTTL	"POST 1 - IDE Disk Drive Initialization"
 
 ;++
 ;   In POST 1 we probe for any attached disk drives (they're optional and there
@@ -1149,13 +1311,17 @@ NOMDL1:	CALL(TCRLF)		; ...
 
 ; Here if the IDE drives don't exist or don't work ...	
 NOIDE:
-	.EJECT
-;	.SBTTL	Software Initialization and Auto Boot
+	.SBTTL	"Software Initialization and Auto Boot"
 
 ; First save the hardware flags (the results of all the POST testing) ...
-SYSIN4:	RLDI(DP,HWFLAGS+1)	; save the POST test results
-	SEX DP\ PUSHR(P4)	; at HWFLAGS and HWFLAGS+1
+SYSIN4:	LDI LOW(HWFLAGS+1)	; point to HWFLAGS 
+	PLO DP\ SEX DP		; ...
+	PUSHR(P4)		; and save the POST results
 	OUTI(LEDS,POST0)	; display POST 0 - startup complete
+
+; Print the POST results ...
+	INLMES("CFG: ")		; show the map of working devices
+	CALL(SHOCF0)		; ...
 
 ;   If the OS type isn't set, presumably because RAM wasn't preserved, then
 ; default to ElfOS.  Initialize the user's saved context too, just in case.
@@ -1166,32 +1332,35 @@ SYSIN4:	RLDI(DP,HWFLAGS+1)	; save the POST test results
 	CALL(INIREGS)		; initialize the user context
 SYSI40:
 
-;   If the boot flag, BOOTF, is set to a non-zero value AND we have a functional
-; IDE master drive then we'll attempt an automatic boot from disk on power up.
-; If the bootstrap is unsuccessful (i.e. there's no drive or the media is not
-; bootable) then we simply enter the command loop anyway.
+;   If the boot flag, BOOTF, is set to a non-zero value then we'll attempt an
+; automatic boot from disk on power up.  If the bootstrap is unsuccessful
+; (i.e. there's no drive or the media is not bootable) then we simply enter
+; the command loop anyway.
 	RLDI(DP,BOOTF)		; point DP to the boot flag
-	LDN	DP		; and then load the boot flag
-	LBNZ	SYSI41		; if it's zero then skip all this
-;;	CALL(BOOTIDE)		; this returns only if the bootstrap fails!
-SYSI41:				; if this fails, fall into the regular startup
+	LDA	DP		; and then load the boot flag
+	LBZ	SYSI41		; if it's zero then skip all this
+	ADI	AB.BOOT		; boot from mass storage device?
+	LBDF	AUTOBT		; yes go do that
+
+; Jump to a fixed 16 bit address at startup, with PC=R0 ...
+	LDA DP\ PHI PC0		; get the restart address
+	LDA DP\ PLO PC0		; ..
+	SEP PC0			; and hope for the best!
 
 ; Here if there's not going to be any automatic boot ...
-	OUTSTR(HLPMSG)		; always be helpful
+SYSI41:	OUTSTR(HLPMSG)		; always be helpful
 	LBR	MAIN		; skip the restart code and read a command
 
 ; A helpful message ...
 HLPMSG:	.TEXT	"\r\nFor help type HELP\r\n\r\n\000"
 
-	.EJECT
-;	.SBTTL	Command Scanner
+	.SBTTL	"Command Scanner"
 
 ;   The restart entry can be reached via the "warm start" vector at $8005.
 ; The only thing that really uses this is the BIOS, and the BIOS will jump here
 ; only if we encounter a breakpoint trap, OR if the user program calls the
 ; F_MINIMON function.  As far as we're concerned those are both the same.
-SYSIN5:
-;;TBA	CALL(TTYINI)		; reset the terminal baud rate
+SYSIN5:	CALL(TTYINI)		; reset the terminal baud rate
 	CALL(SHOBPT)		; print the registers 
 				; then fall into MAIN
 ;  Initialize (or rather, re-initialize) enough context so that things can still
@@ -1238,8 +1407,7 @@ ERRALL:	CALL(TQUEST)		; print a question mark
 	CALL(TCRLF)		; end the line
 	LBR	MAIN		; and go read a new command
 
-	.EJECT
-;	.SBTTL	Lookup and Dispatch Command Verbs
+	.SBTTL	"Lookup and Dispatch Command Verbs"
 
 ;   This routine is called with P1 pointing to the first letter of a command
 ; (usually the first thing in the command buffer) and P2 pointing to a table
@@ -1298,8 +1466,7 @@ COMND5:	SEX	P2		; ...
 	LDI	0		; always return with D cleared!
 	SEX SP\ SEP PC		; branch to the action routine
 
-	.EJECT
-;	.SBTTL	Primary Command Table
+	.SBTTL	"Primary Command Table"
 
 ;   This table contains a list of all the firmware command names and the
 ; addresses of the routines that execute them.  Each table entry is formatted
@@ -1338,8 +1505,7 @@ CMDTBL:
 ; The table always ends with a zero byte...
 	.BYTE	0
 
-	.EJECT
-;	.SBTTL	Examine Memory Command
+	.SBTTL	"Examine Memory Command"
 
 ;  The E[XAMINE] command allows you to examine one or more bytes of memory in
 ; both hexadecimal and ASCII. This command accepts two formats of operands -
@@ -1382,13 +1548,19 @@ EXAM1:	RCOPY(P2,P3)		; copy the address
 	CALL(TCRLF)		; type a CRLF and we're done
 	RETURN			; ...
 
-	.EJECT
-;	.SBTTL	Generic Memory Dump
+	.SBTTL	"Generic Memory Dump"
 
+;++
 ;   This routine will dump, in both hexadecimal and ASCII, the block of memory
 ; between P3 and P4.  It's used by the EXAMINE command, but it can also be
-; called from other random places, which is especially handy for chasing down
-; bugs...
+; called from other random places, such as the dump disk sector command, and
+; can be especially handy for chasing down bugs...
+;
+;CALL:
+;	P3/ starting RAM address
+;	P4/ ending RAM address
+;	CALL(MEMDUMP)
+;--
 MEMDMP:	GLO P3\ ANI $F0\ PLO P3	; round P3 off to $xxx0
 	GLO P4\ ORI $0F\ PLO P4	; and round P4 off to $xxxF
 	CALL(F_INMSG)		; print column headers
@@ -1437,12 +1609,14 @@ MEMDM8:	GLO P3\ ANI $0F\ XRI $0F; have we done sixteen bytes?
 	CALL(F_BRKTEST)		; does the user want to stop early?
 	LBDF	MEMDM9		; branch if yes
 	INC	P3		; on to the next byte
+	GHI P3\ STR SP		; did we roll over from $FFFF to $0000?
+	GLO P3\ OR		; check both bytes for zero
+	LBZ	MEMDM9		; return now if we rolled over
 	CALL(P3LEP4)		; have we done all of them?
 	LBDF	MEMDM2		; nope, keep going
 MEMDM9:	RETURN			; yep - all done
 
-	.EJECT
-;	.SBTTL	Deposit Memory Command
+	.SBTTL	"Deposit Memory Command"
 
 ;   The D[EPOSIT] stores bytes in memory, and it accepts an address and a list
 ; of data bytes as operands:
@@ -1490,8 +1664,7 @@ CLRME1:	LDI 0\ CALL(DRAM)	; write one byte with zeros
 	DBNZ(P2,CLRME1)		; and loop until they're all done
 	RETURN			; ...
 
-	.EJECT
-;	.SBTTL	Access All of User RAM
+	.SBTTL	"Access All of User RAM"
 
 ;   These two routines, ERAM and DRAM, handle the magic necessary to make all of
 ; RAM accessible to the user.  This might sound trivial, but remember that this
@@ -1570,8 +1743,7 @@ DRAM1:	RLDI(T1,MCR)		; access the memory control register
 	GLO	BAUD		; restore the original contents of D
 	CDF\ RETURN		; signal success and we're done
 
-	.EJECT
-;	.SBTTL	INPUT Command
+	.SBTTL	"INPUT Command"
 
 ;   The IN[PUT] command reads the specified I/O port and prints the byte
 ; received in hexadecimal.  It actually has two forms -
@@ -1606,7 +1778,7 @@ INPUT:	CALL(HEXNW)		; read the port number
 ; "SEP P4" to execute the INP and then return.
 INPUT1:	GLO	P2		; get the desired I/O group
 	STR SP\ SEX SP		; put it on the TOS
-	OUT	IOGROUP		; select the I/O group
+	OUT	GROUP		; select the I/O group
 	DEC SP\ DEC SP		; leave the group number on the stack
 	SEP	P4		; now execute the INP instruction
 	DEC	SP		; and leave that result on the stack too
@@ -1623,8 +1795,7 @@ INPUT1:	GLO	P2		; get the desired I/O group
 	GLO P4\ CALL(THEX2)	; finally, type the data we received
 	LBR	TCRLF		; finish the line and we're done here!
 
-	.EJECT
-;	.SBTTL	OUTPUT Command
+	.SBTTL	"OUTPUT Command"
 
 ;   The OUT[PUT] command writes a byte to the specified I/O port.  Like INPUT,
 ; it has two forms depending on whether you want to specify an I/O group
@@ -1658,7 +1829,7 @@ OUTPUT:	CALL(HEXNW2)		; read at least two arguments - port and data
 ; This is pretty much like INPUT - select the group and then call IOTBUF ...
 OUTPU1:	GLO	P2		; get the desired I/O group
 	STR SP\ SEX SP		; put it on the TOS
-	OUT IOGROUP\ DEC SP	; select the I/O group
+	OUT GROUP\ DEC SP	; select the I/O group
 	SEX	P4		; set X=P for IOT
 	SEP	P4		; and execute the user's OUT instruction
 
@@ -1668,8 +1839,7 @@ OUTPU1:	GLO	P2		; get the desired I/O group
 ; after the next command executes.
 	LBR	MAIN1		; and we're done
 
-	.EJECT
-;	.SBTTL	RUN, CALL and CONTINUE Commands
+	.SBTTL	"RUN, CALL and CONTINUE Commands"
 
 ;   All three of these commands, RUN, CALL and CONTINUE, will start (or resume)
 ; execution of some user program, including either of the ElfOS or MicroDOS
@@ -1759,19 +1929,33 @@ INIRE1:	LDI 0\ STXD		; zap another byte
 	LDI $23\ STR DP		; ... set P=3 and X=2
 	RETURN			; and quit
 
-	.EJECT
-;	.SBTTL	BOOT Command
+	.SBTTL	"BOOT Command"
 
-;   The BOOT command attempts to bootstrap the IDE master device.  It has no
-; arguments and there's not much more to it than that!
-BOOCMD:	CALL(GETDRV)		; get the storage decide unit number
+;   The BOOT command attempts to bootstrap ElfOS from the specified storage
+; device.  The specified device can be any one of ID0, ID1, TU0, or TU1.
+;
+;	>>>BOOT [xxx]
+;
+; If not specified the device defaults to ID0 (i.e. the IDE MASTER)...
+BOOCMD:	CALL(ISEOL)		; was a device name given ?
+	LBDF DEFBOO		; default to unit 0 if not
+	CALL(GETDEV)		; get the storage device unit number
 	PUSHD			; and save that for a moment
-	CALL(CHKEOL)		; make sure there are no arguments
+	CALL(CHKEOL)		; make sure there are no more arguments
+	LBR	BOOCM2		; and then go boot
 
-; The SYSINI routine calls here if the boot flag is set to BOOT...
-BOOIDE:	OUTSTR(BOOMSG)		; tell the user what we're doing
+;   Enter here at DEFBOO to boot from the default device (unit 0).  Enter at
+; AUTOBT to boot from the storage device in D.  The SYSINI routine calls the
+; later if the auto restart flag is set to BOOT.
+DEFBOO:	LDI 0			; select unit 0
+AUTOBT:	PUSHD			; save that on the stack
+				; and then continue with the boot process
+
+; Boot the unit on the stack...
+BOOCM2:	OUTSTR(BOOMSG)		; tell the user what we're doing
 	POPD\ PUSHD		; get the unit number back
-	CALL(THEX1)		; type the unit number
+	CALL(PRTDEV)		; and type the device name
+	INLMES(" ...")		; ...
 	CALL(TCRLF)		; ...
 	POPD			; restore the unit number
 	CALL(F_SDBOOT)		; and ask the BIOS to bootstrap
@@ -1782,11 +1966,10 @@ NOBOOT:	OUTSTR(BFAMSG)		; ?NOT BOOTABLE
 	RETURN			; ...
 
 ; IDE bootstrap messages ...
-BOOMSG:	.TEXT	"Booting unit \000"
+BOOMSG:	.TEXT	"Booting \000"
 BFAMSG:	.TEXT	"?NOT BOOTABLE\r\n\000"
 
-	.EJECT
-;	.SBTTL	DUMP IDE Command
+	.SBTTL	"DUMP Storage Device Command"
 
 ;   The DUMP command can dump disk sectors from either IDE0 (master) or IDE1
 ; (slave) drive.  Sectors are read into memory and then dumped with the regular
@@ -1801,7 +1984,7 @@ BFAMSG:	.TEXT	"?NOT BOOTABLE\r\n\000"
 ; function - sorry).  This limits us to dumping only the first 32Mb or so of
 ; disk space.  That's probably good enough ...
 ;
-DDUMP:	CALL(GETDRV)\ PUSHD	; get the drive number and save that
+DDUMP:	CALL(GETDEV)\ PUSHD	; get the drive number and save that
 	CALL(DECNQ)		; and get the block number
 	CALL(CHKEOL)		; that should be the end of the command
 	POPD\ PUSHD		; get the unit number back
@@ -1815,12 +1998,28 @@ DDUMP:	CALL(GETDRV)\ PUSHD	; get the drive number and save that
 	RLDI(P4,DSKBSZ-1)	;  ... to $1FF
 	LBR	MEMDMP		; print that out and we're done
 
-	.EJECT
-;	.SBTTL	Format Storage Devices
+	.SBTTL	"Format Storage Device"
 
-FORMAT:	CALL(GETDRV)\ PUSHD	; get the drive number and save that
+;++
+;   The FORMAT command will erase all data on a storage device.  It doesn't
+; really "format" it in the sense that you format a floppy diskette, but it
+; does fill every sector on the device with random data.
+;
+;	>>>FORMAT IDn
+;	- or -
+;	>>>FORMAT TUn
+;--
+
+FORMAT:	CALL(GETDEV)\ PUSHD	; get the drive number and save that
 	CALL(CHKEOL)		; should be no more arguments
+	OUTSTR(FWNMSG)		; warn that this will erase all data
+	POPD\ PUSHD		;  ... and give the device name
+	CALL(PRTDEV)		;  ...
+	INLMES("!\r\n")		;  ...
 	CALL(CONFIRM)		; ask "Are you really, really sure??"
+	LBNF	FORM99		; abort if he says no
+
+; He's sure - start formatting!
 	POPD\ PUSHD		; get the unit number back
 	CALL(F_SDRESET)		; and initialize that drive
 	LBDF	DRVERR		; branch if disk error
@@ -1848,20 +2047,19 @@ FORM21:	SEX P1\ PUSHR(T1)	; store the LBA in the buffer
 
 ; Right now, we just quite after 655536 sectors!!
 	CALL(TCRLF)
-	RETURN
+FORM99:	RETURN
 
+FWNMSG:	.TEXT	"THIS WILL ERASE ALL DATA ON \000"
 WRTMSG:	.TEXT	"\rWRITING ... \000"
 
-	.EJECT
-;	.SBTTL	Scan Storage Device Names
+	.SBTTL	"Scan or Print Storage Device Names"
 
 ;   This routine will parse a storage device name - ID0, ID1, TU0 or TU1.
 ; If it succeeds it returns the storage device number in D, as would be used
 ; by a call to F_SDREAD/SDWRITE/SDRESET or F_SDBOOT.  If it fails to match
 ; the device name then it just jumps to ERRALL and aborts the command.
-GETDRV:	RLDI(P2,SDTBL)		; point to the table of names
+GETDEV:	RLDI(P2,SDTBL)		; point to the table of names
 	LBR	COMND		; parse the name and return
-
 
 ; Table of drive names ...
 SDTBL:	CMD(3, "ID0", SDID0)	; select the master drive
@@ -1891,20 +2089,28 @@ SDTU1:	LDI 3			; select TU58 unit 1
 	 .WORD	HWSLU1		;  ...
 	POPD\ RETURN		; and return the unit if it does
 
-	.EJECT
-;	.SBTTL	HELP Command
+
+;   This routine will print the storage device name, given the unit number
+; in D.  In some sense, it's the reverse of GETDEV ...
+PRTDEV:	SHL\ SHL		; each name takes 4 bytes
+	ADI	LOW(DEVNMS)	; index into the device name table
+	PLO	P1		; ...
+	LDI 0\ ADCI HIGH(DEVNMS); add the high part too
+	PHI	P1		; ...
+	LBR	F_MSG		; print the name and return ...
+
+; Table of device names; exactly FOUR CHARACTERS EACH!
+DEVNMS	.TEXT	"ID0\000ID1\000TU0\000TU1\000"
+
+	.SBTTL	"HELP Command"
 
 ;   The HELP command prints a canned help file, which is stored in EPROM in
-; plain ASCII.  If the current console is a VT1802, then we do some extra
-; work to paginate the output in the style of the Un*x "more" command - this
-; prevents the good stuff from scrolling off the top of the screen before
-; you can see it!
+; plain ASCII. 
 PHELP:	CALL(CHKEOL)		; HELP has no arguments
 	RLDI(P1,HELP)		; nope - just print the whole text
 	LBR	F_MSG		; ... print it and return
 
-	.EJECT
-;	.SBTTL	SHOW, SET and TEST Commands
+	.SBTTL	"SHOW, SET and TEST Commands"
 
 ;   These three little routines parse the SHOW, SET and TEST commands, each of
 ; which takes a secondary argument - e.g. "SHOW RTC", "SET BOOT", or "TEST RAM".
@@ -1933,13 +2139,14 @@ SHOCMD:	CMD(3, "REGISTERS"    , SHOREG)	; show registers (after a breakpoint)
 SET:	RLDI(P2,SETCMD)		; point to the table of SET commands
 	LBR	COMND		; parse the argument and return
 
-SETCMD:	CMD(1, "Q",	  SETQ)		; set Q (for testing)
-	CMD(2, "RTC",     SETRTC)	; set the real time clock
-	CMD(4, "SLU0",	  SETSL0)	; set SLU0 parameters
-	CMD(4, "SLU1",    SETSL1)	; set SLU1 parameters
-	CMD(4, "YEAR",    SETYR)	; set the current year
-	CMD(2, "OSTYPE",  SETOST)	; set the operating system type
-	CMD(3, "RESTART", SETRST)	; set the boot options
+SETCMD:	CMD(1, "Q",	    SETQ)	; set Q (for testing)
+	CMD(2, "RTC",       SETRTC)	; set the real time clock
+	CMD(4, "SLU0",	    SETSL0)	; set SLU0 parameters
+	CMD(4, "SLU1",      SETSL1)	; set SLU1 parameters
+	CMD(4, "YEAR",      SETYR)	; set the current year
+	CMD(2, "OSTYPE",    SETOST)	; set the operating system type
+	CMD(3, "RESTART",   SETRST)	; set the boot options
+	CMD(5, "NORESTART", SETRNO)	; clear the auto boot option
 	.BYTE	0
 
 
@@ -1949,10 +2156,10 @@ TEST:	RLDI(P2,TSTCMD)		; point to the table of TEST commands
 
 TSTCMD:	CMD(4, "RAM0",   TSTRM0); exhaustive test for RAM0 chip
 	CMD(4, "RAM1",   TSTRM1);   "    "    "    "  RAM1  "
+	CMD(3, "PSG",	 TSTPSG); AY-3-8912 sound generator
 	.BYTE	0
 
-	.EJECT
-;	.SBTTL	Display User Context
+	.SBTTL	"Display User Context"
 
 ;   This routine will display the user registers that were saved after the last
 ; breakpoint trap.  It's used by the "SHOW REGISTERS" command, and is also
@@ -2003,8 +2210,7 @@ SHORE2:	OUTCHR('R')		; type "Rn="
 ; Messages...
 BPTMSG:	.TEXT	"\r\nBREAK AT \000"
 
-	.EJECT
-;	.SBTTL	Show the Current Date and Time
+	.SBTTL	"Show the Current Date and Time"
 
 ;   The SHOW RTC command shows the current date and time from the CDP1879.
 ; It takes no arguments, and simply calls the SHOWNOW routine.  SHOWNOW is
@@ -2031,8 +2237,7 @@ SHOWNOW:RLDI(P1,TIMBUF)		; point to the six byte buffer
 	OUTSTR(CMDBUF)		; print the date/time
 	RETURN			; and we're all done
 
-	.EJECT
-;	.SBTTL	Set Current Date and Time
+	.SBTTL	"Set Current Date and Time"
 
 ;   The SET RTC command will set the CDP1879 RTC time registers.  Note that the
 ; CDP1879 doesn't actually keep track of the year, but the BIOS will save
@@ -2065,8 +2270,7 @@ SETRTC:	CALL(HWTEST)		; make sure the RTC is installed
 	CALL(SHOWNOW)		; echo the new time
 	LBR	TCRLF		; finish the line and return...
 
-	.EJECT
-;	.SBTTL	SET YEAR Command
+	.SBTTL	"SET YEAR Command"
 
 ;   Unfortunately the CDP1879 RTC does not keep track of the year (I guess
 ; they ran out of registers!) so the BIOS caches the year in our data page
@@ -2106,8 +2310,7 @@ SETYR2:	PLO	P2		; save it in P2
 	CALL(SHOWNOW)		; echo the result
 	LBR	TCRLF		; finish the line and we're done
 
-	.EJECT
-;	.SBTTL	SET Q Command
+	.SBTTL	"SET Q Command"
 
 ;   The "SET Q 0" and "SET Q 1" commands may be used to test the Q output.
 ;
@@ -2131,11 +2334,11 @@ SETQ:	CALL(HEXNW)		; one parameter is required
 RESETQ:	REQ			; reset Q
 	RETURN			; and return
 
-	.EJECT
-;	.SBTTL	SHOW EF Command
+	.SBTTL	"SHOW EF Command"
 
 	PAGE
 
+;++
 ;   The SHOW EF command prints the current state of all four EF inputs.  This
 ; command optionally takes an argument to specify an I/O group -
 ;
@@ -2145,49 +2348,71 @@ RESETQ:	REQ			; reset Q
 ;
 ;   The state printed is the logical status, so EFx=1 implies that the input
 ; pin is low and vice versa.  
-SHOWEF:	RLDI(P2,BASEGRP)	; default to the base board I/O group
-	CALL(ISEOL)		; is there a second argument?
+;
+;   Note that we have to be a little careful here - calling any console I/O
+; routine, like INLMES or F_TTY, will reset the group to 1!  To that end we
+; construct a little routine in RAM at IOTBUF which will change the group
+; like this
+;
+;	IOTBUF:	SEX	PC
+;		OUT	GROUP
+;		 <group>
+;		RETURN
+;--
+SHOWEF:	RLDI(P4,IOTBUF)		; build the routine in IOTBUF ...
+	LDI	($E0+PC)	;  ... execute inline I/O
+	STR P4\ INC P4		;  ...
+	LDI	($60+GROUP)	;  ...
+	STR P4\ INC p4
+
+; Now get the desired group number from the command line
+	RLDI(P2,BASEGRP)	; default to the base board I/O group
+	CALL(ISEOL)		; is there an argument?
 	LBDF	SHOEF1		; no - use the base board group
 	CALL(HEXNW)		; yes - go scan that too
 	CALL(CHKEOL)		; and that had better be all
 SHOEF1:	GLO	P2		; get the desired I/O group
-	STR SP\ SEX SP		; put it on the TOS
-	OUT IOGROUP\ DEC SP	; select the I/O group
+	STR P4\ INC P4		;  ... and add that to IOTBUF
+	LDI	($D0+RETPC)	; finish off the little subroutine
+	STR	P4		;  ...
 				; and start dumping the EFx flags
 				
 ; Print EF1...
-	INLMES("EF1=")
+	INLMES("EF1=")		; print the flag name
+	CALL(IOTBUF)		; select the right group
 	LDI	'0'		; assume it's zero
 	BN1	EFS1		; and branch if it really is zero
 	LDI	'1'		; nope - it's one
-EFS1:	CALL(F_TTY)
+EFS1:	CALL(F_TTY)		; print that and proceed
 
 ; Print EF2...
-	INLMES(" EF2=")
-	LDI	'0'		; assume it's zero
-	BN2	EFS2		; and branch if it really is zero
-	LDI	'1'		; nope - it's one
-EFS2:	CALL(F_TTY)
+	INLMES(" EF2=")		; pretty much the same as above
+	CALL(IOTBUF)		; ...
+	LDI	'0'		; ...
+	BN2	EFS2		; ...
+	LDI	'1'		; ...
+EFS2:	CALL(F_TTY)		; ...
 
 ; Print EF3...
-	INLMES(" EF3=")
-	LDI	'0'		; assume it's zero
-	BN3	EFS3		; and branch if it really is zero
-	LDI	'1'		; nope - it's one
-EFS3:	CALL(F_TTY)
+	INLMES(" EF3=")		; just like always 
+	CALL(IOTBUF)		; ...
+	LDI	'0'		; ...
+	BN3	EFS3		; ...
+	LDI	'1'		; ...
+EFS3:	CALL(F_TTY)		; ...
 
 ; Print EF4...
-	INLMES(" EF4=")
-	LDI	'0'		; assume it's zero
-	BN4	EFS4		; and branch if it really is zero
-	LDI	'1'		; nope - it's one
-EFS4:	CALL(F_TTY)
+	INLMES(" EF4=")		; more of the same
+	CALL(IOTBUF)		; ...
+	LDI	'0'		; ...
+	BN4	EFS4		; ...
+	LDI	'1'		; ...
+EFS4:	CALL(F_TTY)		; ...
 
 ; All done!
 	LBR	TCRLF
 
-	.EJECT
-;	.SBTTL	SHOW BATTERY
+	.SBTTL	"SHOW BATTERY"
 
 ;   The SHOW BATTERY command reports the status of the memory and RTC backup
 ; battery.  We don't have an ADC to tell us the exact battery voltage, but
@@ -2212,8 +2437,7 @@ SHOBAT:	INLMES("BATTERY ")	; ...
 SHOBA1:	INLMES("OK")		; ...
 	RETURN
 
-	.EJECT
-;	.SBTTL	SHOW DP Command
+	.SBTTL	"SHOW DP Command"
 
 ;   The SHOW DP command dumps the monitor data page, that is the memory space
 ; from $FE00 thru $FEDF.  It's exactly the same as the equivalent EXAMINE
@@ -2230,8 +2454,7 @@ DDUMP1:	RLDI(P3,DPBASE)		; start dumping from here
 	RLDI(P4,DPEND)		; and stop here
 	LBR	MEMDMP		; dump it out in the usual format
 
-	.EJECT
-;	.SBTTL	SHOW SLU Command
+	.SBTTL	"SHOW SLU Command"
 
 ;   The SHOW SLU command will show the settings, baud rate and character format,
 ; for SLU0 and, if it is installed, SLU1.  Note that SLU0 is fixed at 8N1,
@@ -2313,8 +2536,7 @@ EPEPI:	.BYTE	'O'		; EPE=0 PI=0
 	.BYTE	'E'		; EPE=1 PI=0
 	.BYTE	'N'		; EPE=1 PI=1
 
-	.EJECT
-;	.SBTTL	SET SLU0/SLU1 Command
+	.SBTTL	"SET SLU0/SLU1 Command"
 
 ;   The SET SLU command lets you change the settings for either SLU0 or 1.
 ; For SLU0 only the baud rate can be changed, however for SLU1 both the baud
@@ -2344,7 +2566,7 @@ SETSL0:	CALL(SETBAUD)		; parse the baud rate argument
 	ANI	BD.SLU1		; clear out the SLU0 setting
 	IRX\ OR			; set the new baud rate
 SETS01:	STR	DP		; and put that back
-	OUTI(IOGROUP,BASEGRP)	; select the base board I/O group
+	OUTI(GROUP,BASEGRP)	; select the base board I/O group
 	SEX DP\ OUT SLUBRG	; update the baud rate generator
 	RETURN			; and we're done
 
@@ -2366,7 +2588,7 @@ SETSL1:	CALL(HWTEST)		; see if SLU1 is present
 	CALL(CHKEOL)		; now we'd better be finished
 	RLDI(DP,SL1FMT)		; point to the SLU1 character format
 	POPD\ STR DP		; and update that
-	OUTI(IOGROUP,SL1GRP)	; select the SLU1 I/O group
+	OUTI(GROUP,SL1GRP)	; select the SLU1 I/O group
 	SEX DP\ OUT SL1CTL	; and update the character format
 SETS11:	SEX SP\ POPD		; get the baud rate back
 	SHL\ SHL\ SHL\ SHL	; SLU1 is on the left
@@ -2425,10 +2647,55 @@ SETFM4:	LDA	P1		; and get the third character
 SETFM5: LDI	SL.SBS		; set the stop bit select bit
 	OR\ STR SP		; with the rest of the flags
 SETFM6:	LDN SP\ RETURN		; return the flag byte and we're done
-	
-	.EJECT
-;	.SBTTL	SHOW CONFIGURATION
 
+	.SBTTL	"Initialize Both SLUs Baud and Format"
+
+;++
+;   This routine will initialize the baud rate generator and character formats
+; for both SLUs.  Usually these settings are saved in RAM at SLBAUD and SL1FMT,
+; and if they are then we'll just use that.  If nothing is saved then we try
+; to autobaud the console SLU0, and we default SLU1 to 9600 8N1.  The console
+; is always set to 8N1 regardless.
+;--
+
+; See if terminal settings are saved in RAM, and use them if they are ...
+TTYINI:	RLDI(DP,SLBAUD)		; get the baud rates from RAM
+	LDN	DP		; ...
+	LBZ	TTYI21		; branch if it's not set
+	OUTI(GROUP,BASEGRP)	; first load the baud rate generator
+	SEX DP\ OUT SLUBRG	; this sets both baud rates
+	OUTI(SL0CTL,SL.8N1)	; always set SLU0 to 8N1
+	LBR	TTYI22		; finish setting up SLU1 and we're done
+
+;   Here if we need to autobaud.  Note that the BIOS will determine and store
+; the the console baud rate at SLBAUD, however it will leave the auxiliary
+; SLU1 baud unchanged.  Since that's not initialized either, we'll force it
+; to 9600.
+TTYI21:	LDI	BD.DFLT		; always set SLU1 to 9600
+	STR	DP		; update SLBAUD
+	LDI	SL.8N1		; set SLU1 to be 8N1 too
+	INC DP\ STR DP		; update SL1FMT
+	CALL(F_SETBD)		; now autobaud SLU0
+
+;   Set the SLU1 character format according to what's saved at SL1FMT ...
+; BUT, we have to be careful here - if the expansion board isn't installed then
+; the base board doesn't decode I/O groups, and writing to the SLU1 UART will
+; actually write to SLU0!  That's Bad, so test the HW flags to see if the
+; expansion board is present before we do anything ...
+TTYI22:	GHI	P4		; are I/O groups implemented ?
+	ANI	H1.TLIO		; ??
+	LBZ	TTYI23		; nope - skip this
+	OUTI(GROUP,SL1GRP)	; now access SLU1
+	SEX DP\ OUT SL1CTL	; send SL1FMT to the control register
+	OUTI(GROUP,BASEGRP)	; return to the base board group to be safe
+
+; Always be sure the local echo flag is set for CONGET!
+TTYI23:	LDI 1\ PHI BAUD		; set BAUD.1 to 1
+	RETURN			; and we're done
+
+	.SBTTL	"SHOW CONFIGURATION"
+
+;++
 ;   The SHOW CONFIGURATION (SHOW CONF is enough!) command lists the hardware
 ; options installed, including all the options on the main board and the
 ; expansion board.  The results are all determined by the hardware flags in
@@ -2436,8 +2703,11 @@ SETFM6:	LDN SP\ RETURN		; return the flag byte and we're done
 ;
 ;	>>>SHOW CONFIGURATION
 ;
+;   Note that the alternate entry at SHOCF0 is used by SYSINI to show the
+; POST results at startup...
+;--
 SHOCFG:	CALL(CHKEOL)		; this command has no arguments
-	RLDI(P1,HWLIST)		; point P3 at the list of options and flags
+SHOCF0:	RLDI(P1,HWLIST)		; point P3 at the list of options and flags
 	RLDI(DP,HWFLAGS)	; point DP at the hardware flags
 SHOCF1:	LDA	P1		; get the flags pointer
 	LBZ	SHORAM		; finish by showing the memory size
@@ -2518,8 +2788,7 @@ HWTEST:	LDA A\ PHI T1		; gotta load the argument here
 ; "?xxxx NOT INSTALLED" error for absent hardware ...
 HNIMSG:	.BYTE	" NOT INSTALLED\r\n", 0
 
-	.EJECT
-;	.SBTTL	SET OSTYPE and SHOW OSTYPE
+	.SBTTL	"SET OSTYPE and SHOW OSTYPE"
 
 ;   These commands allow you to set the operating system type and therefore the
 ; memory map used for booting and during user program execution.  Right now
@@ -2575,21 +2844,26 @@ SHOWOS:	RLDI(DP,OSTYPE)\ LDN DP	; get the OSTYPE flag
 	OUTSTR(OSNMDOS)\ RETURN	; nope - say "MICRODOS"
 SHOOS1:	OUTSTR(OSNELOS)\ RETURN	; say "ELFOS"
 
-	.EJECT
-;	.SBTTL	SET RESTART and SHOW RESTART Commands
+	.SBTTL	"SET RESTART, SET NORESTART and SHOW RESTART Commands"
 
 ;   The SET RESTART command allows you to specify the action taken by this
 ; firmware on a warm start, i.e. one where the current RAM contents are valid.
 ; Remember that the SBC1802 has battery backup for the RAM, so that situation
-; happens all the time.  There are three options -
+; happens all the time.  There are two options -
 ;
 ;	>>>SET RESTART xxxx	- run program at memory address xxxx
-;	>>>SET RESTART BOOT	- attempt to boot from primary IDE disk
-;	>>>SET RESTART NONE	- no special action (prompt for command)
+;	>>>SET RESTART dddd	- attempt to boot from storage device
 ;
 ;   The first option, SET RESTART xxxx, obviously depends on there being some
 ; kind of restart routine stored in memory at a fixed address.  This routine
 ; is started with the equivalent of a RUN command (i.e. P=0).
+;
+;   The second one allows you to specify any mass storage device, ID0, ID1,
+; TU0 or TU1, as the restart device.  We're very fortunate that NONE of these
+; start with a valid hex digit; otherwise this might be ambiguous.
+;
+;   The SET NORESTART command cancels any current restart setting, and the
+; next time you boot you'll get the ">>>" monitor prompt.
 ;
 ; SHOW RESTART is even easier - it simply lists the current setting.
 ;
@@ -2600,7 +2874,7 @@ SETRST:	CALL(ISEOL)\ LBDF CMDERR; and there had better be an argument there
 
 ;   First attempt to scan the hex version of the command.  If this succeeds,
 ; then we know that's what we have.  If it fails to parse, then back up and
-; rescan with the NONE or BOOT options instead...
+; rescan for a device name ...
 	LDN	P1		; get the first character
 	CALL(ISHEX)		; is it a hex number?
 	LBNF	SETRE1		; nope - try NONE or BOOT
@@ -2609,50 +2883,36 @@ SETRST:	CALL(ISEOL)\ LBDF CMDERR; and there had better be an argument there
 	LBNF	SETRE1		; error - try the other format
 
 ; Here for the SET RESTART xxxx form.
-	RLDI(DP,RESTA+1)	; point to RESTA
+	RLDI(DP,RESTA+1)	; point to the boot flag
 	SEX DP\ PUSHR(P2)	; save the restart address to RESTA
-	LDI	AB.ADDR		; finally, set the BOOT FLAG to ABTADDR
-	STR DP\ RETURN		; set BOOTF and return
+	LDI AB.ADDR\ STXD	; set BOOTF to AB.ADDR
+	RETURN			; and we're done
 
 
-;   Here to test for the SET RESTART BOOT and SET RESTART NONE forms of the
-; command.  If it's not one of these, it's wrong :-)
-SETRE1:	RCOPY(P1,T1)		; restore the command line pointer
-	RLDI(P2,RESCMD)		; point to the table of restart options
-	RLDI(DP,BOOTF)		; and leave DP pointing to BOOTF
-	LBR	COMND		; parse it (or call CMDERR if it doesn't parse!)
-
-; Table of SET RESTART commands...
-RESCMD:	CMD(3, "BOOT", SETRBO)	; SET RESTART BOOT
-	CMD(2, "NONE", SETRNO)	; SET RESTART NONE
-	.BYTE	0		; end of table
+;   Here to test for the SET RESTART dddd form of the command ...  If the
+; argument isn't a device name, then it's wrong!
+SETRE1:	CALL(GETDEV)		; get the device number in D
+	ORI	AB.BOOT		; set the mass storage boot flag
+	PUSHD			; and save that for a second
+	RLDI(DP,BOOTF)		; point to the boot flag
+	POPD\ STR DP		; and store that option
+	RETURN			; after that, we're done ...
 
 
-; Here for SET RESTART BOOT...
-SETRBO:	CALL(CHKEOL)		; no more arguments
-	LDI AB.DISK\ STR DP	; set BOOTF to AB.DISK
-	RETURN		 	; and we're done
-
-
-; Here for SET RESTART NONE...
+; Here for SET NORESTART ...
 SETRNO:	CALL(CHKEOL)		; no more arguments
+	RLDI(DP,BOOTF)		; ...
 	LDI AB.NONE\ STR DP	; set BOOTF to AB.NONE
 	RETURN			; and that's all
 
 
-
 ; The "SHOW RESTART" command prints the current restart option and address...
 SHORST:	CALL(CHKEOL)		; no arguments allowed here!
-	RLDI(DP,BOOTF)\ LDN DP	; get the restart option
-	XRI AB.DISK\ LBZ RESBOO	; test for BOOT
-	LDA DP			; get BOOTF again
-	XRI AB.ADDR\ LBZ RESADR	; test for RESTART xxxx
-
-
-; Here for RESTART NONE (or unknown) ...
-RESHLT:	INLMES("NONE")
-	LBR	TCRLF
-
+	RLDI(DP,BOOTF)\ LDA DP	; get the restart option
+	LBZ	RESHLT		; zero -> SET NORESTART ...
+	ADI	AB.BOOT		; test the mass storage boot flag
+	LBDF	RESBOO		; yes - show the device name
+				; otherwise print the restart address
 
 ; Here for RESTART xxxx ...
 RESADR:	INLMES("RESTART @")
@@ -2660,13 +2920,15 @@ RESADR:	INLMES("RESTART @")
 	CALL(THEX4)		; type that in hex
 	LBR	TCRLF		; finish the line and return
 
-
-; And here for RESTART BOOT ...
-RESBOO:	INLMES("BOOT")
+; Here for RESTART NONE (or unknown) ...
+RESHLT:	INLMES("NONE")
 	LBR	TCRLF
 
-	.EJECT
-;	.SBTTL	SHOW CPU Command
+; And here for RESTART ... ...
+RESBOO:	CALL(PRTDEV)		; print the device name
+	LBR	TCRLF		; finish the line and we're done
+
+	.SBTTL	"SHOW CPU Command"
 
 ;   The SHOW CPU command will figure out whether the CPU is an original 1802 or
 ; the "newer" 1804/5/6.  Better than that, if this system has the CDP1879 RTC
@@ -2720,7 +2982,7 @@ SHOCP0:
 	INLMES(" - SPEED=")
 	RCLR(P2)		; clear P2 (we'll use this for counting, later)
 	RLDI(DP,RTCBASE+RTCCSR)	; point to the control/status register
-	OUTI(IOGROUP,BASEGRP)	; select the baseboard EF flags
+	OUTI(GROUP,BASEGRP)	; select the baseboard EF flags
 	LDI RT.STRT+RT.O32+RT.CSC\ STR DP ; turn on the clock
 
 ; Wait for the RTC IRQ, just to be sure we're synchronized with the clock.
@@ -2770,8 +3032,7 @@ SHOC2A:	SMI	1		;   [2] count down
 	INLMES("000")		; multiply by 1000
 SHOCP9:	LBR	TCRLF		; finish the line and we're done!!!
 
-	.EJECT
-;	.SBTTL	SHOW DISK and SHOW TAPE Commands
+	.SBTTL	"SHOW DISK and SHOW TAPE Commands"
 
 ;++
 ;   The SHOW DISK and SHOW TAPE commands show the status of any attached IDE
@@ -2852,6 +3113,8 @@ SHODRV:	PUSHD\ PHI T2		; we'll need the unit number again!
 	POPD			; get the unit number back
 	CALL(F_SDREAD)		; read that sector
 	LBDF	TCRLF		; if it fails, then print CRLF and quit
+	CALL(F_BTCHECK)		; see if it boots
+	LBDF	TCRLF		; say nothing if it's not
 	OUTSTR(EOSVOL)		; say that it's ElfOS bootable
 	LBR	TCRLF		; finish the line and we're done
 
@@ -2863,8 +3126,7 @@ DRVERR:	RLDI(P1,DERMSG)		; ?DRIVE ERROR
 DERMSG:	.TEXT	"?DRIVE ERROR\r\n\000"
 EOSVOL:	.TEXT	" ElfOS bootable\000"
 
-	.EJECT
-;	.SBTTL	Load Intel HEX Records
+	.SBTTL	"Load Intel HEX Records"
 
 ;   This routine will parse an Intel .HEX file record from the command line and,
 ; if the record is valid, deposit it in memory.  All Intel .HEX records start
@@ -2963,8 +3225,7 @@ IHEX6:	OUTSTR(HCKMSG)
 HCKMSG:	.TEXT	"?CHECKSUM ERROR\r\n\000"
 URCMSG:	.TEXT	"?UNKNOWN RECORD\r\n\000"
 
-	.EJECT
-;	.SBTTL	Scan Two and Four Digit Hex Values
+	.SBTTL	"Scan Two and Four Digit Hex Values"
 
 ;   These routines are used specifically to read Intel .HEX records.  We can't
 ; call the usual HEXNW, et al, functions here since they need a delimiter to
@@ -3000,8 +3261,7 @@ GHEX2:	LDN	P1		; get the first character
 	INC P1\ SDF		; success!
 GHEX20:	RETURN			; and we're all done
 
-	.EJECT
-;	.SBTTL	TEST RAM0 and TEST RAM1 Commands
+	.SBTTL	"TEST RAM0 and TEST RAM1 Commands"
 
 ;   The TEST RAM0 and TEST RAM1 commands run an exhaustive memory test on either
 ; of the two SRAM chips.  You might ask, "why not just test them both at the
@@ -3058,8 +3318,7 @@ MTSMSG:	.TEXT	"TESTING RAM ... PRESS ANY KEY TO ABORT\r\n\000"
 RM0MSG:	.TEXT	"RAM0: \000"
 RM1MSG:	.TEXT	"RAM1: \000"
 
-	.EJECT
-;	.SBTTL	Exhaustive Memory Test
+	.SBTTL	"Exhaustive Memory Test"
 
 ;   This routine will perform an exhaustive test on one of our RAM chips using
 ; the "Knaizuk and Hartmann" algorithm (Proceedings of the IEEE April 1977).
@@ -3173,8 +3432,7 @@ MEMT4:	GLO	P3		; is the test byte $00??
 ; One complete test (six passes total) are completed..
 MEMT5:	CDF\ IRX\ RETURN	; give the success return
 
-	.EJECT
-;	.SBTTL	Diagnostic Support Routines
+	.SBTTL	"Diagnostic Support Routines"
 
 ;   This little routine will clear the current diagnostic pass and error
 ; counts (PASSK and ERRORK).  It's called at the start of most diagnostics.
@@ -3207,237 +3465,283 @@ PRTPEK:	RLDI(DP,PASSK)		; point DP at the pass counter
 	INLMES(" ERRORS")	; ...
 	LBR	TCRLF		; finish the line and we're done
 
-	.EJECT
-;	.SBTTL	TEST IDE Command
-#ifdef UNUSED
+	.SBTTL	"Tests AY-3-8912 Sound Generator Chip"
+
+;++
+;--
+TSTPSG:	CALL(CHKEOL)
+	RLDI(P4,MUSIC)
+	LBR	PLAYER
+
+	.SBTTL	"Play Music!"
+
+;++
+;   This routine will play music (or any random noise!) using the AY-3-8912
+; programmable sound generator chip.  It interprets a byte stream generated
+; by Len Shustek's MIDITONES program, 
 ;
-;	P1   - address sector data buffer
-;	P2.0 - drive select (0=MASTER, 1=SLAVE)
-;	T1   - LBA (low  16 bits)
-;	T2   - LBA (high 12 bits)
-;	P3   - LBA (low  16 bits)
-;	P4   - LBA (high 12 bits)
-
-TSTIDE:	CALL(CHKEOL)		; should be no more arguments
-	CALL(CONFIRM)		; ask "Are you really, really sure??"
-	RETURN
-	QCLR(P4,P3)		; zero all 24 bits of the LBA
-
-; Fill the disk buffer with the low word of the LBA ...
-TSTID2:	OUTSTR(WRTMSG)		; starting the writing pass
-	RCOPY(P2,P3)
-	CALL(TDECP2)
-TSTI2A:	RLDI(P1,DSKBUF+DSKBSZ)	; fill the disk buffer backwards
-	RLDI(T1,DSKBSZ)		; count bytes here
-TSTI2B:	SEX P1\ PUSHR(P3)	; store the LBA in the buffer
-	DBNZ(T1,TSTI2B)		; and do all 512 bytes
-
-; Write this buffer to the disk ...
-	RCLR(P2)		; for the moment, always use the master
-	RLDI(P1,DSKBUF)		; point to the disk buffer
-	RCOPY(T1,P3)
-	RCOPY(T2,P4)
-	CALL(F_IDEWRITE)	; write to disk
-	INC P3			; increment the low LBA
-	GLO P3\ LBNZ TSTI2A	; if not zero, then keep writing
-	GHI P3\ LBNZ TSTID2	; print the LBA every 256 sectors
-
-	CALL(TCRLF)
-	RETURN
-
-WRTMSG:	.TEXT	"\rWRITING ... \000"
-RDDMSG:	.TEXT	"\rREADING ... \000"
-;;SPIN:	.TEXT	"|/-\"
-#endif
-
-	.EJECT
-;	.SBTTL	Initialize IDE Disk or Partition
-
-#ifdef UNUSED
-;   The INITIALIZE command creates empty disk volumes or partitions for either
-; ElfOS or MicroDOS.  It's a fairly complicated command, so hang on and bear
-; with me - the first parameter is the type of volume/partition you want to
-; create, either "ELFOS" or "MICRODOS".  The second parameter is the disk unit
-; that you want to create it on, either "IDE0" or "IDE1".  The third and final
-; parameter is any kind of volume label that you want to add, which is stored
-; in the boot block.  For example,
+;	http://code.google.com/p/miditones/
 ;
-;	>>>INITIALIZE ELFOS IDE0 ElfOS v4.1.0 System
-;	- or -
-;	>>>INITIALIZE MICRODOS IDE1 PL/1802 WORK DISKETTE
+; Len's program takes a MIDI file and renders it for three basic tone generators
+; and then outputs a simple stream of byte codes for the music.  Len documents
+; the byte codes fairly well on his web page, so I won't repeat that part here.
 ;
-;   Note that the volume label string does not need quotes - it's assumed to
-; be everything else up to the end of the command line.
-
-HDINIT:;;CALL(CHKEOL)		; no arguments allowed
-	CALL(HWTEST)		; make sure IDE0 is present
-	 .WORD	 HWIDE0		; ...
-	CALL(F_LTRIM)		; save the pointer to the volume label
-	RCOPY(P4,P1)		; ...
-	RLDI(P1,DSKBUF)		; fill the disk buffer with zeros
-	RLDI(P2,DSKBSZ)		; ...
-	CALL(CLRMEM)		; ...
-
-; Get the drive capacity and store that in the boot block ...
-	RCLR(P2)		; always assume the master for now
-	CALL(F_IDESIZE)		; get the disk size in MB
-	LBDF	DRVERR		; shouldn't really fail, but ...
-	RLDI(P1,DSKBUF+EB.SIZE)	; disk size is stored here
-	GHI T2\ STR P1\ INC P1	; 4 bytes, big endian order
-	GLO T2\ STR P1\ INC P1	; ...
-	GHI T1\ STR P1\ INC P1	; ...
-	GLO T1\ STR P1\ INC P1	; ...
-
-; Store the current date and time in the boot block ...
-	RLDI(P1,DSKBUF+EB.DATE)	; store the creation date and time
-	CALL(F_GETTOD)		; ...
-
-; And lastly, store the volume label ...
-	RCOPY(P1,P4)		; restore the command line pointer
-	RLDI(P2,DSKBUF+EB.NAME)	; point to the volume name in the boot block
-	RLDI(P3,EB.NLEN)	; maximum size of the name field
-	CALL(STRNCPY)		; copy that to the boot block
-
-; Write the boot block back to the disk and we're done ...
-	RCLR(P2)		; always assume the master for now
-	QCLR(T2,T1)		; write to LBA zero
-	RLDI(P1,DSKBUF)		; from this disk buffer
-	CALL(F_IDEWRITE)	; ...
-	LBDF	DRVERR		; branch if write error
-
-	RCLR(P2)		; always assume the master for now
-	QCLR(T2,T1)		; write to LBA zero
-	RCLR(P1)		; from this disk buffer
-	CALL(F_IDEREAD)		; ...
-	LBDF	DRVERR		; branch if write error
-	RLDI(P3,0)
-	RLDI(P4,$1FF)
-	LBR	MEMDMP
-
-	RETURN			; otherwise we're done
-#endif
-
-	.EJECT
-;	.SBTTL	Scan Partition Sizes and ???
-
-; scan a decimal number and return in (T2,T1) ...
-DECNQ:	CALL(F_LTRIM)		; skip any leading spaces
-	LDN P1\ CALL(F_ISNUM)	; make sure there is at least one digit
-	LBNF	CMDERR		; ... fail if not
-	PUSHQ(P3,P4)		; we need these regsters for working space
-	QCLR(T2,T1)		; accumulate the total here
-DECNQ0:	LDN	P1		; get the next character
-	CALL(F_ISNUM)		; is it a decimal digit
-	LBNF	DECNQ1		; branch when we reach the end
-	RCLR(P4)\ RLDI(P3,10)	; multiply the current total by 10
-	CALL(MUL32)		; ...
-	LDA P1\ SMI '0'		; get the character back and convert to binary
-	SEX SP\ STR SP		; put it on the stack
-	GLO T1\ ADD   \ PLO T1	; quad precision add one byte to (T2,T1)
-	GHI T1\ ADCI 0\ PHI T1	; ...
-	GLO T2\ ADCI 0\ PLO T2	; ...
-	GHI T2\ ADCI 0\ PHI T2	; ...
-	LBR	DECNQ0		; keep trying for more digits
-DECNQ1:	SEX SP\ IRX\ POPQ(P3,P4); restore P3 and P4 
-	RETURN			; and we're finished
-
-	.EJECT	
-;	.SBTTL	Thirty Two Bit Unsigned Decimal Output
-
-;   This routine converts the 32 bit unsigned value in the register pair
-; (T2,T1) to ASCII decimal and types it out on the console.  A field width can 
-; optionally be specified, and the output will be padded with leading spaces
-; if necessary.  This is handy for lining up columns in the partition table,
-; for example.
+; LIMITATIONS
+;   Right now, Len's program only extracts tone (i.e. note) information from
+; the MIDI - everything else is lost.  The 89102 is capable of independently
+; controlling the volume for each of the three tone generators and it'd sound
+; a lot better if some rudimentary dynamics/volume control was added. 
 ;
 ;CALL:
-;	<(T2,T1) contain the value to type, and D contains the field width>
-;	CALL(TDEC32U)
+;	<P4 points to the byte stream from MIDITONES>
+;	CALL(PLAYER)
 ;
-;   Note that P1 thru P4 are used but are saved and restored.  T3 is also used
-; and is NOT saved.  T3.0 holds the number of leading spaces to print (this
-; is decremented as we extract digits) and T3.1 holds the number of digits
-; we have pushed onto the stack so far.
-;
-;   Fair warning - this takes a significant amount of stack space.  Just pushing
-; the four registers, P1..P4, takes 8 bytes.  Added to that are the decimal
-; digits we extract - a 32 bit number can have as many as 10 digits.  That's a
-; total of 18 bytes of stack space, plus a couple more for calling DIV32 or
-; THEX1...
-;
-TDEC32U:PLO T3\ LDI 0\ PHI T3	; save the field width
-	PUSHR(P1)\ PUSHR(P2)	; save (P2,P1)
-	PUSHR(P3)\ PUSHR(P4)	; and (P4,P3)
-TDEC320:RLDI(P3,10)\ RCLR(P4)	; put the divisor (10) in (P4,P3)
-	CALL(DIV32)		; and divide (T2,T1) by (P4,P3)
-	GLO P1\ PUSHD		; save the remainder on the stack
-	GHI T3\ DEC T3		; decrement T3.0
-	ADI 1\ PHI T3		;  ... and increment T3.1
-	QBNZ(T2,T1,TDEC320)	; keep going until (T2,T1) is zero
-TDEC321:GLO T3\ SHL		; do we need any leading spaces?
-	LBDF	TDEC322		; branch if not
-	CALL(TSPACE)		; yes - type one
-	GHI T3\ DEC T3\ PHI T3	; and decrement T3.0 w/o affecting T3.1
-	LBR	TDEC321		; keep spacing until T3.0 is negative
-TDEC322:POPD\ CALL(THEX1)	; recover a digit and type it
-	GHI T3\ SMI 1\ PHI T3	; decrement the count of digits pushed
-	LBNZ	TDEC322		; and keep looping until we've popped them all
-	IRX\ POPR(P4)\ POPR(P3)	; restore (P4,P3)
-	POPR(P2)\ POPRL(P1)	; and restore (P2,P1)
-	RETURN			; and we're finally done!
+; NOTE that pretty much all registers are used here!
+;--
 
-	.EJECT
-;	.SBTTL	Thirty Two Bit Quad Precision Multiply and Divide
+; Initialize the PSG ...
+PLAYER:	OUTI(GROUP, PSGGRP)	; select the sound generator I/O group
+	OUTPSG(PSGR6,  $00)	; disable the noise generator
+	OUTPSG(PSGR7,  $38)	; turn on tones A, B & C
+	OUTPSG(PSGR10, $00)	; mute channel A
+	OUTPSG(PSGR11, $00)	; ... channel B
+	OUTPSG(PSGR12, $00)	; ... and C
+	OUTPSG(PSGR15, $00)	; disable envelope generator (we don't use it)
 
-;   This routine performs a 32 bit by 32 bit multiply of the values in register
-; pair (T2,T1) by the register pair (P4,P3) to give a 32 bit result in (T2,T1).
-; Register pair (P2,P1) are used as a temporary to accumulate the result and
-; are destroyed in the process.  Overflow is not detected.
-;
-;CALL:
-;	<COMPUTE (T2,T1) * (P4,P3) -> (T2,T1)>
-;	CALL(MUL32)
-;
-MUL32:	PUSHQ(P2,P1)		; save P2 and P1
-	QCLR(P2,P1)		; accumulate the product here
-MUL320:	QSHR(P4,P3)		; then shift the multiplier right
-	LBNF	MUL321		; skip the add if the multipler LSB was zero
-	QADD(P2,P1,T2,T1)	; add the multiplicand to the result
-MUL321:	QSHL(T2,T1)		; shift the multiplicand left for next time
-	QBNZ(P4,P3,MUL320)	; we can quit when the multiplier is zero
-	QCOPY(T2,T1,P2,P1)	; transfer the result to (T2,T1)
-	IRX\ POPQ(P2,P1)	; restore P2 and P1
+; Now we're ready to play ....
+	CALL(PLAYLP)		; and away we go!!
+
+; Reset the PSG and we're done...
+	OUTPSG(PSGR10, $00)	; mute channel A
+	OUTPSG(PSGR11, $00)	; ... channel B
+	OUTPSG(PSGR12, $00)	; ... and C
+	OUTPSG(PSGR7,  $3F)	; turn off all mixer inputs
+	OUTI(GROUP, BASEGRP)	; select the base board I/O group again
+	RETURN			; and back to the monitor
+
+	.SBTTL	"Music Player Loop"
+
+;++
+;   This is the main loop of the AY-3-8912 music player.  It fetches the next
+; note or function from the music stream and programmes the 8912 accordingly.
+; P4 should point at the music stream.
+;--
+PLAYLP:	LDN	P4		; look ahead at the next byte
+	ANI	$80		; check only the MSB
+	LBNZ	PLAY1		; branch if it's a tone generator function
+
+; It's a delay - this byte and the next byte are the interval, in milliseconds.
+	LDA	P4		; get the first delay byte
+	PHI	P1		; they're in big endian ordering
+	LDA	P4		; and the second delay byte
+	PLO	P1		; ...
+;   Things get a little tricky now - with a 2.5MHz CPU crystal, it's not
+; possible to generate an exact 1mS delay.  A delay of exactly 2mS can be done
+; however, and we have the DLY2MS macro for that.  The DLY1MS macro attempts
+; a 1mS delay, but it's off by 4 clocks or about 1.6uS.  Nobody would notice
+; that, as long as we don't let the error accumulate (say, by putting DLY1MS
+; inside a loop!).
+	ANI	1		; was the delay interval odd?
+	LBZ	PLAY10		; no - skip this
+	DLY1MS			; yes - add an extra 1mS delay
+	DEC	P1		; and adjust the count
+PLAY10:	GLO P1\ STR SP		; see if the count is zero
+	GHI P1\ OR		; ...
+	LBZ	PLAYLP		; quit when it's zereo
+	DLY2MS			; delay for 2mS
+	DEC P1\ DEC P1		; decrement the count twice!
+	LBR	PLAY10		; keep delaying until it's zero
+
+;   It's not a delay.  A byte of $9t (where 't' is the tone generator number)
+; starts a tone playing, and $89 stops it.  Officially the only other defined
+; value is $F0, which means end of tune, but we interpret anything else as the
+; end and stop playing.
+PLAY1:	LDN	P4		; get the byte code again
+	ANI	$F0		; look at just the top nibble
+	SMI	$90		; check for $80 or $90
+	LBZ	PLAY3		; branch if $80 - start a tone
+	LBL	PLAY2		; branch if $90 - stop a tone
+	RETURN			; otherwise we're done playing - quit!
+
+;   Stop a tone generator.  This is a single byte code, and the lower nibble is
+; the tone generator index - 0, 1 or 2.  In theory there could be more tone
+; generators (up to 16, I guess) but we don't deal well with that case...
+PLAY2:	LDA	P4		; get the command one more time
+	ANI	$0F		; get only the generator number
+	LBNZ	PLAY20		; if it's not zero, check channel B or C
+	CALL(MUTEA)		; mute channel A
+	LBR	PLAYLP		; ... and we're done
+PLAY20:	SMI	1		; is it B or C ??
+	LBNZ	PLAY21		; branch if channel C
+	CALL(MUTEB)		; nope - mute channel B
+	LBR	PLAYLP		; ...
+PLAY21:	CALL(MUTEC)		; here if channel C
+	LBR	PLAYLP		; ...
+
+
+;   Start a tone generator.  This is a two byte code - the lower nibble of the
+; first byte is the tone generator number, just like for MUTE.  The second
+; byte is the MIDI note number, from 0 to 127.  The MIDI note number we have to
+; actually look up in the note table in order to translate it to a counter
+; value for the 8910 tone generator...
+PLAY3:	LDA	P4		; dispatch by the tone generator number
+	ANI	$0F		; ...
+	LBNZ	PLAY30		; ... check channel B or C
+	LDA	P4		; channel A - get the note number
+	CALL(PLAYA)		; ... and play
+	LBR	PLAYLP		; ... and we're done
+PLAY30:	SMI	1		; is it B or C ??
+	LBNZ	PLAY31		; branch if channel C
+	LDA	P4		; get the note
+	CALL(PLAYB)		; ... and play channel B
+	LBR	PLAYLP		; ...
+PLAY31:	LDA	P4		; get the note
+	CALL(PLAYC)		; ... and play channel C
+	LBR	PLAYLP		; ...
+
+	.SBTTL	"PSG Functions to Control the Tone Generators"
+
+; Play the MIDI note in D on tone generator A ...
+PLAYA:	CALL(LDNOTE)		; get the tone generator setting
+	GLO	P1		; get the low tone byte
+	CALL(WRPSG)		; and write to R0
+	 .DB	 PSGR0		;  ....
+	GHI	P1		; then write the high byte
+	CALL(WRPSG)		;  ....
+	 .DB	 PSGR1		;  ... to R1
+	OUTPSG(PSGR10, PSGVOL)	; and finally unmute channel A
+	RETURN			; all done
+
+; Play the MIDI note in D on tone generator B ...
+PLAYB:	CALL(LDNOTE)		; get the tone generator setting
+	GLO	P1		; get the low tone byte
+	CALL(WRPSG)		; and write to R2
+	 .DB	 PSGR2		;  ....
+	GHI	P1		; then write the high byte
+	CALL(WRPSG)		;  ....
+	 .DB	 PSGR3		;  ... to R3
+	OUTPSG(PSGR11, PSGVOL)	; and finally unmute channel B
+	RETURN			; all done
+
+; Play the MIDI note in D on tone generator C ...
+PLAYC:	CALL(LDNOTE)		; get the tone generator setting
+	GLO	P1		; get the low tone byte
+	CALL(WRPSG)		; and write to R4
+	 .DB	 PSGR4		;  ....
+	GHI	P1		; then write the high byte
+	CALL(WRPSG)		;  ....
+	 .DB	 PSGR5		;  ... to R5
+	OUTPSG(PSGR12, PSGVOL)	; and finally unmute channel C
+	RETURN			; all done
+
+; Mute channel A ...
+MUTEA:	OUTPSG(PSGR10, $00)	; just set the volume to zero
+	RETURN			; ...
+
+; Mute channel B ...
+MUTEB:	OUTPSG(PSGR11, $00)	; ...
+	RETURN			; ...
+
+; Mute channel C ...
+MUTEC:	OUTPSG(PSGR12, $00)	; ...
+	RETURN			; ...
+
+	.SBTTL	"PSG Miscellaneous Subroutines"
+
+; Write the byte in D to the PSG register indicated inline ...
+WRPSG:	SEX	A		; point X at the inline register number
+	OUT	PSGADDR		; send it to the PSG, increment A
+	SEX	SP		; back to the stack
+	STR	SP		; save D on the TOS
+	OUT	PSGDATA		; and write the data byte
+	DEC	SP		; correct for OUT, which increments X
 	RETURN			; and we're done
 
 
-;   And this routine performs a 32 bit by 32 bit division of the values in 
-; register pair (T2,T1) by register pair (P4,P3) to give a 32 bit result in
-; (T2,T1) and a 32 bit remainder in (P2,P1).  Division by zero is not detected
-; (and no guarantees as to the result you'll get!).
-;
-;CALL:
-;	<COMPUTE (T2,T1) / (P4,P3) -> (T2,T1), remainder in (P2,P1)>
-;	CALL(DIV32)
-;
-DIV32:	LDI 33\ PLO BAUD	; keep a loop counter in BAUD.0
-	QCLR(P2,P1)		; clear the remainder
-	CDF			; ... and the first quotient bit
-DIV320:	QSHLC(T2,T1)		; shift dividend MSB -> C, C -> quotient LSB
-	DEC BAUD\ GLO BAUD	; decrement the loop counter
-	LBZ	DIV322		; we're done when it reaches zero
-	QSHLC(P2,P1)		; shift dividend MSB into remainder
-	QSUB(P2,P1,P4,P3)	; and try to subtract
-	LBL	DIV321		; if it doesn't fit, then restore
-	SDF			; it fits - shift a 1 into the quotient
-	LBR	DIV320		; and keep dividing
-DIV321:	QADD(P2,P1,P4,P3)	; divisor didn't fit - restore remainder
-	CDF			; and shift a 0 into the quotient
-	LBR	DIV320		; and keep dividing
-DIV322:	RETURN			; here when we're done
+; Read the PSG register indicated inline, return the result in D ...
+RDPSG:	SEX	A		; point X at the register (inline)
+	OUT	PSGADDR		; select that register, increment A
+	SEX	SP		; point X at the TOS again
+	INP	PSGDATA		; read the register into D and the TOS
+	RETURN			; that's all
 
-	.EJECT
-	PAGE
-	.EJECT
+
+; Load the note table entry for the note in D into P1 ...
+LDNOTE:	ADI	PSGKEY		; transpose the note if desired
+	SHL			; multiply the index by two
+	ADI	LOW(MIDINOTE)	; index into the MIDI note table
+	PLO	T1		; and save that in the pointer
+	LDI	HIGH(MIDINOTE)	; then set the high part 
+	ADCI	0		; include any carry
+	PHI	T1		; set the rest of the pointer
+	LDA T1\ PHI P1		; get the note high byte
+	LDN T1\ PLO P1		; and the low byte
+	RETURN			; ...
+
+	.SBTTL	"MIDI Note and Test Music Tables"
+
+;++
+;   This table is indexed by the MIDI note number, 0..127, and gives the
+; corresponding 8912 tone generator setting.  In the SBC1802 the 8912 clock
+; is the baud rate clock, 4.9152Mhz, divided by 4.  So these values are
+; calculated assuming a 1.2288MHz clock for the 8912.
+;
+;   Note that this table contains only six octaves worth of notes to save
+; space, although MIDI allows for much more.  The PSGKEY symbol is the offset
+; applied to each note to get the correct table entry, remembering of course
+; that each octave is 12 notes.
+;--
+PSGKEY	.EQU	-36+12
+MIDINOTE:
+;		   A      A#     B     C      C#      D      D#     E      F      F#     G      G#
+	.WORD	 4697,  4433,  4184,  3950,  3728,  3519,  3321,  3135,  2959,  2793,  2636,  2488
+	.WORD	 2348,  2217,  2092,  1975,  1864,  1759,  1661,  1567,  1479,  1396,  1318,  1244
+	.WORD	 1174,  1108,  1046,   987,   932,   880,   830,   784,   740,   698,   659,   622
+	.WORD	  587,   554,   523,   494,   466,   440,   415,   392,   370,   349,   329,   311
+	.WORD	  294,   277,   262,   247,   233,   220,   208,   196,   185,   175,   165,   156
+	.WORD	  147,   139,   131,   123,   116,   110,   104,    98,    92,    87,    82,    78
+
+
+;++
+;   And this table is some sample music that can be played with the "TEST PSG"
+; command.  The first one is a simple set of scales, played first with single
+; notes and then again with chords to demonstrate the polyphonic abilities of
+; the 8912.   The second part is just a piece of popcorn - you'll recognize it!
+MUSIC:
+	; Scales ...
+	.BYTE	$90, $48, $01, $BF, $90, $54, $01, $C0, $90, $53, $01, $C0
+	.BYTE	$90, $51, $01, $C0, $80, $00, $05, $90, $4F, $01, $C0, $90, $4D
+	.BYTE	$01, $C0, $90, $4C, $01, $C0, $90, $4A, $01, $C0, $80, $00, $05
+	.BYTE	$90, $48, $03, $80, $80, $03, $85, $90, $48, $01, $C0, $90, $4C
+	.BYTE	$91, $54, $01, $C0, $90, $53, $91, $4A, $01, $C0, $90, $48, $91
+	.BYTE	$51, $01, $C0, $80, $81, $00, $05, $90, $47, $91, $4F, $01, $C0
+	.BYTE	$90, $45, $91, $4D, $01, $C0, $90, $4C, $91, $43, $01, $C0, $90
+	.BYTE	$41, $91, $4A, $01, $C0, $80, $81, $00, $05, $90, $40, $91, $48
+	.BYTE	$03, $80, $80, $81, $03, $85, $90, $43, $91, $48, $92, $3C
+	.BYTE	$01, $C0, $90, $51, $91, $4F, $92, $54, $01, $C0, $90, $51
+	.BYTE	$91, $47, $92, $53, $01, $BF, $90, $51, $91, $48, $92, $4D
+	.BYTE	$01, $C0, $80, $81, $82, $00, $06, $90, $4F, $91, $4C, $92, $48
+	.BYTE	$01, $C0, $90, $4D, $91, $4A, $92, $41, $01, $BF, $90, $43, $91
+	.BYTE	$4C, $92, $45, $01, $C0, $90, $41, $91, $4A, $92, $3E, $01, $C0
+	.BYTE	$80, $81, $82, $00, $05, $90, $43, $91, $48, $92, $45, $05, $40
+	.BYTE	$80, $81, $82
+	; Pause ...
+	.BYTE	$02, $FF
+	; Popcorn ...
+	.BYTE	$90, $54, $00, $D6, $90, $52, $00, $D6, $90, $54, $00, $D6
+	.BYTE	$90, $4F, $00, $D7, $90, $4B, $00, $D6, $90, $4F, $00, $D6
+	.BYTE	$90, $48, $01, $AD, $90, $54, $00, $D6, $90, $52, $00, $D6
+	.BYTE	$90, $54, $00, $D7, $90, $4F, $00, $D6, $90, $4B, $00, $D6
+	.BYTE	$90, $4F, $00, $D6, $90, $48, $01, $AD, $90, $54, $00, $D6
+	.BYTE	$90, $56, $00, $D7, $90, $57, $00, $D6, $90, $54, $00, $6B
+	.BYTE	$90, $57, $00, $D6, $90, $54, $00, $6B, $90, $57, $00, $D7
+	.BYTE	$90, $56, $00, $D6, $90, $52, $00, $6B, $90, $56, $00, $D6
+	.BYTE	$90, $52, $00, $6C, $90, $56, $00, $D6, $90, $54, $00, $D6
+	.BYTE	$90, $52, $00, $D6, $90, $4F, $00, $D7, $90, $52, $00, $D6
+	.BYTE	$90, $54, $01, $AD, $80
+	; End of music ...
+	.BYTE $F0
+
 	.EJECT
 	.EJECT
 	.EJECT
@@ -3455,7 +3759,7 @@ DIV322:	RETURN			; here when we're done
 	.EJECT
 ;;	.TEXT	"THIS IS GARBAGE JUST TO CHANGE THE CHECKSUM"
 	.EJECT
- PAGE
+
 ;   Here to confirm a really dangerous operation.  We return DF=1 if the user
 ; types either "Y" or "y", and DF=0 for absolutely anything else.
 ;
@@ -3464,13 +3768,12 @@ DIV322:	RETURN			; here when we're done
 CONFIRM:OUTSTR(CNFMSG)		; give the user a fair warning
 YESORNO:CALL(F_READ)\ CALL(FOLD); read one character from console
 	SMI	'Y'		; this is the only acceptable answer
-	LBZ	CONFI1		; ,,,
+	LBZ	CONFI1		; ...
 	CDF\ LBR TCRLF		; no - return DF=0
 CONFI1:	SDF\ LBR TCRLF		; yes - return DF=1
 CNFMSG:	.TEXT	"ARE YOU SURE?\000"
 
-	.EJECT
-;	.SBTTL	Command Parsing Functions
+	.SBTTL	"Command Parsing Functions"
 
 ;   Examine the character pointed to by P1 and if it's a space, tab, or end
 ; of line (NULL) then return with DF=1...
@@ -3573,8 +3876,7 @@ RTRIM:	LDN P1\ DEC P1		; get a byte and back up
 	INC P1\ INC P1\ STR P1	; in the last non-null byte
 	RETURN
 
-	.EJECT
-;	.SBTTL	Scan Command Parameter Lists
+	.SBTTL	"Scan Command Parameter Lists"
 
 ;   These routines will scan the parameter lists for commands which either
 ; one, two or three parameters, all of which are hex numbers.
@@ -3616,8 +3918,7 @@ P3LE0:	SDF			; return DF=1
 P3GTP4:	CDF			; return DF=0
 	RETURN			; ...
 
-	.EJECT
-;	.SBTTL	Output Decimal and Hexadecimal Numbers
+	.SBTTL	"Output Decimal and Hexadecimal Numbers"
 
 ;   This routine will convert a four bit value in D (0..15) to a single hex
 ; digit and then type it on the console...
@@ -3670,31 +3971,22 @@ TDEC1A:	CALL(TDECP1)		; keep typing P1 recursively
 TDEC1B:	POPD			; then get back the remainder
 	LBR	THEX1		; type it in ASCII and return
 
-	.EJECT
-;	.SBTTL	Type Version Number
+	.SBTTL	"Type Version Number"
 
 ;   Type a version number as used by the firmware and the BIOS, in the format
-; "MM.mm(eeee)", where MM is the major version, mm is the minor version, and
-; eeee is the edit number.  All fields are decimal.  Version numbers are stored
-; in three bytes (yes, three) as follows -
+; "MM(eeee)", where MM is the major version and eeee is the edit number.  All
+; fields are decimal.  Version numbers are stored in three bytes (yes, three)
+; as follows -
 ;
-; VERSION: .BYTE  (MAJOR*16)+MINOR
+; VERSION: .BYTE  MAJOR
 ;	   .WORD  EDIT
 ;
 ; When this routine is called, P3 should point to this version number block.
-TVERSN:	LDA	P3		; get the major and minor version
-	SEX SP\ PUSHD		; save a copy for later
-	SHR\ SHR\ SHR\ SHR	; get the major version first	
-	ANI	$0F		; ...
-	PLO	P2		; (ODECU wants a 16 bit argument!)
+TVERSN:	LDA	P3		; get the major version
+	PLO	P2		; (TDECU wants a 16 bit argument!)
 	LDI	0		; ...
 	PHI	P2		; ...
 	CALL(TDECP2)		; type that in decimal
-	OUTCHR('.')		; ..
-	POPD			; get the version byte back again
-	ANI	$0F		; and this time we want the lower nibble
-	PLO	P2		; ...
-	CALL(TDECP2)		; ...
 	OUTCHR('(')		; ...
 	LDA	P3		; now get the edit number
 	PHI	P2		; ...
@@ -3704,8 +3996,7 @@ TVERSN:	LDA	P3		; get the major and minor version
 	LDI	')'		; ...
 	LBR	F_TTY		; and we're done
 
-	.EJECT
-;	.SBTTL	Type Various Special Characters
+	.SBTTL	"Type Various Special Characters"
 
 ; This routine will type a carriage return/line feed pair on the console...
 TCRLF:	LDI	CH.CRT		; type carriage return
@@ -3725,6 +4016,133 @@ TTABC:	LDI	CH.TAB		; ...
 TQUEST:	LDI	'?'		; ...
 	LBR	F_TTY		; ...
 
-	.EJECT
+	.SBTTL	"32 bit Unsigned Decimal Input and Output"
+
+;++
+;   This routine will scan an unsigned decimal number from the command line
+; and return a 32 bit value in (T2,T1).  Except for the quad precision
+; aspect, it works pretty much like any of the other decimal input routines.
+;
+;CALL:
+;	CALL(DECNQ)
+;	<return with 32 bit value in (T2,T1)>
+;
+;   Note that if at least one decimal digit is not found, it will branch
+; to CMDERR and never return!
+;--
+DECNQ:	CALL(F_LTRIM)		; skip any leading spaces
+	LDN P1\ CALL(F_ISNUM)	; make sure there is at least one digit
+	LBNF	CMDERR		; ... fail if not
+	PUSHQ(P3,P4)		; we need these regsters for working space
+	QCLR(T2,T1)		; accumulate the total here
+DECNQ0:	LDN	P1		; get the next character
+	CALL(F_ISNUM)		; is it a decimal digit
+	LBNF	DECNQ1		; branch when we reach the end
+	RCLR(P4)\ RLDI(P3,10)	; multiply the current total by 10
+	CALL(MUL32)		; ...
+	LDA P1\ SMI '0'		; get the character back and convert to binary
+	SEX SP\ STR SP		; put it on the stack
+	GLO T1\ ADD   \ PLO T1	; quad precision add one byte to (T2,T1)
+	GHI T1\ ADCI 0\ PHI T1	; ...
+	GLO T2\ ADCI 0\ PLO T2	; ...
+	GHI T2\ ADCI 0\ PHI T2	; ...
+	LBR	DECNQ0		; keep trying for more digits
+DECNQ1:	SEX SP\ IRX\ POPQ(P3,P4); restore P3 and P4 
+	RETURN			; and we're finished
+
+
+;++
+;   This routine converts the 32 bit unsigned value in the register pair
+; (T2,T1) to ASCII decimal and types it out on the console.  A field width can 
+; optionally be specified, and the output will be padded with leading spaces
+; if necessary.  This is handy for lining up columns in the partition table,
+; for example.
+;
+;CALL:
+;	<(T2,T1) contain the value to type, and D contains the field width>
+;	CALL(TDEC32U)
+;
+;   Note that P1 thru P4 are used but are saved and restored.  T3 is also used
+; and is NOT saved.  T3.0 holds the number of leading spaces to print (this
+; is decremented as we extract digits) and T3.1 holds the number of digits
+; we have pushed onto the stack so far.
+;
+;   Fair warning - this takes a significant amount of stack space.  Just pushing
+; the four registers, P1..P4, takes 8 bytes.  Added to that are the decimal
+; digits we extract - a 32 bit number can have as many as 10 digits.  That's a
+; total of 18 bytes of stack space, plus a couple more for calling DIV32 or
+; THEX1...
+;--
+TDEC32U:PLO T3\ LDI 0\ PHI T3	; save the field width
+	PUSHR(P1)\ PUSHR(P2)	; save (P2,P1)
+	PUSHR(P3)\ PUSHR(P4)	; and (P4,P3)
+TDEC320:RLDI(P3,10)\ RCLR(P4)	; put the divisor (10) in (P4,P3)
+	CALL(DIV32)		; and divide (T2,T1) by (P4,P3)
+	GLO P1\ PUSHD		; save the remainder on the stack
+	GHI T3\ DEC T3		; decrement T3.0
+	ADI 1\ PHI T3		;  ... and increment T3.1
+	QBNZ(T2,T1,TDEC320)	; keep going until (T2,T1) is zero
+TDEC321:GLO T3\ SHL		; do we need any leading spaces?
+	LBDF	TDEC322		; branch if not
+	CALL(TSPACE)		; yes - type one
+	GHI T3\ DEC T3\ PHI T3	; and decrement T3.0 w/o affecting T3.1
+	LBR	TDEC321		; keep spacing until T3.0 is negative
+TDEC322:POPD\ CALL(THEX1)	; recover a digit and type it
+	GHI T3\ SMI 1\ PHI T3	; decrement the count of digits pushed
+	LBNZ	TDEC322		; and keep looping until we've popped them all
+	IRX\ POPR(P4)\ POPR(P3)	; restore (P4,P3)
+	POPR(P2)\ POPRL(P1)	; and restore (P2,P1)
+	RETURN			; and we're finally done!
+
+	.SBTTL	"Thirty Two Bit Quad Precision Multiply and Divide"
+
+;   This routine performs a 32 bit by 32 bit multiply of the values in register
+; pair (T2,T1) by the register pair (P4,P3) to give a 32 bit result in (T2,T1).
+; Register pair (P2,P1) are used as a temporary to accumulate the result and
+; are destroyed in the process.  Overflow is not detected.
+;
+;CALL:
+;	<COMPUTE (T2,T1) * (P4,P3) -> (T2,T1)>
+;	CALL(MUL32)
+;
+MUL32:	PUSHQ(P2,P1)		; save P2 and P1
+	QCLR(P2,P1)		; accumulate the product here
+MUL320:	QSHR(P4,P3)		; then shift the multiplier right
+	LBNF	MUL321		; skip the add if the multipler LSB was zero
+	QADD(P2,P1,T2,T1)	; add the multiplicand to the result
+MUL321:	QSHL(T2,T1)		; shift the multiplicand left for next time
+	QBNZ(P4,P3,MUL320)	; we can quit when the multiplier is zero
+	QCOPY(T2,T1,P2,P1)	; transfer the result to (T2,T1)
+	IRX\ POPQ(P2,P1)	; restore P2 and P1
+	RETURN			; and we're done
+
+
+;   And this routine performs a 32 bit by 32 bit division of the values in 
+; register pair (T2,T1) by register pair (P4,P3) to give a 32 bit result in
+; (T2,T1) and a 32 bit remainder in (P2,P1).  Division by zero is not detected
+; (and no guarantees as to the result you'll get!).
+;
+;CALL:
+;	<COMPUTE (T2,T1) / (P4,P3) -> (T2,T1), remainder in (P2,P1)>
+;	CALL(DIV32)
+;
+DIV32:	LDI 33\ PLO BAUD	; keep a loop counter in BAUD.0
+	QCLR(P2,P1)		; clear the remainder
+	CDF			; ... and the first quotient bit
+DIV320:	QSHLC(T2,T1)		; shift dividend MSB -> C, C -> quotient LSB
+	DEC BAUD\ GLO BAUD	; decrement the loop counter
+	LBZ	DIV322		; we're done when it reaches zero
+	QSHLC(P2,P1)		; shift dividend MSB into remainder
+	QSUB(P2,P1,P4,P3)	; and try to subtract
+	LBL	DIV321		; if it doesn't fit, then restore
+	SDF			; it fits - shift a 1 into the quotient
+	LBR	DIV320		; and keep dividing
+DIV321:	QADD(P2,P1,P4,P3)	; divisor didn't fit - restore remainder
+	CDF			; and shift a 0 into the quotient
+	LBR	DIV320		; and keep dividing
+DIV322:	RETURN			; here when we're done
+
+	.SBTTL	"The End"
+
 	.END
 

@@ -1,4 +1,4 @@
-;	.SBTTL	 Spare Time Gizmos SBC1802 Definitions
+	.SBTTL	"Spare Time Gizmos SBC1802 Definitions"
 
 ;++
 ;       Copyright (C) 2006-2020 By Spare Time Gizmos, Milpitas CA.
@@ -32,8 +32,7 @@
 ;0000000001111111111222222222233333333334444444444555555555566666666667777777777
 ;1234567890123456789012345678901234567890123456789012345678901234567890123456789
 
-	.EJECT
-;	.SBTTL	Register Definitions and Subroutine Linkages
+	.SBTTL	"Register Definitions and Subroutine Linkages"
 
 ; Hardware defined registers...
 PC0	.EQU	0	; PC register for initialization
@@ -81,8 +80,7 @@ P4	.EQU	$B	;  and fourth...
 ; of D, from the time of the CALL, being left in BAUD.0!
 BAUD	.EQU	$E	; unused on the SBC1802
 
-	.EJECT
-;	.SBTTL	Generic Definitions
+	.SBTTL	"Generic Definitions"
 
 ; Bit equates ...
 BIT0	.EQU	%0000000000000001
@@ -119,8 +117,7 @@ CH.CTU	.EQU	$15	; control-U (erase input)
 CH.ESC	.EQU	$1B	; control-[ (escape)
 CH.DEL	.EQU	$7F	; rubout (delete)
 
-	.EJECT
-;	.SBTTL	Useful Macro Definitions
+	.SBTTL	"Useful Macro Definitions"
 
 ; Advance the current origin to the next page...
 #define PAGE	.ORG (* + $FF) & $FF00
@@ -139,7 +136,14 @@ CH.DEL	.EQU	$7F	; rubout (delete)
 ; major cycles per iteration, so a count of 155 gives 620 clocks.  Add in two
 ; more for the LDI and the final NOP adds three more (yes, NOP takes 3!) for a
 ; grand total of 625...
-#define DLY2MS		LDI 155\ SMI 1\ BNZ $-2\ NOP
+DLYCONS	.EQU	155		; magic constant for 2mS at 2.5MHz
+#define DLY2MS	LDI DLYCONS\ SMI 1\ BNZ $-2\ NOP
+
+;  This macro will delay for one millisecond, and you can use it with DLY2MS
+; to generate delays for odd numbers of milliseconds.  It's not quite accurate
+; since a 1mS delay with a 2.5MHz CPU clock needs 312.5 major cycles, and
+; there's no trick that I can think of to get half a cycle.
+#define DLY1MS	LDI DLYCONS/2+1\ SMI 1\ BNZ $-2
 
 ;   And this macro uses T1.0 and the DLY2MS macro to delay up to half a second.
 ; It's not very accurate for small intervals (just call DLY2MS directly!), but
@@ -156,8 +160,7 @@ CH.DEL	.EQU	$7F	; rubout (delete)
 ; That's not many when it comes to messages, so use INLMES with caution...
 #define	INLMES(str)	CALL(F_INMSG)\ .TEXT str \ .BYTE 0
 
-	.EJECT
-;	.SBTTL	Instructions I Wish the 1802 Had
+	.SBTTL	"Instructions I Wish the 1802 Had"
 
 ;   These macros define some additional mnemonics and a few simple instructions
 ; that the 1802 should have had all along!
@@ -199,8 +202,7 @@ CH.DEL	.EQU	$7F	; rubout (delete)
 ; ONLY be used during the actual POST testing because it assumes P=0!
 #define POST(n)		SEX PC0\ OUT LEDS\ .BYTE n
 
-	.EJECT
-;	.SBTTL	Sixteen Bit Register Operation Macros
+	.SBTTL	"Sixteen Bit Register Operation Macros"
 
 ;   Note that many of these (though not all of them!)  are all compatible with
 ; the 1804/5/6 CPU and, if you had one of those CPUs and were so inclined, you
@@ -248,8 +250,7 @@ CH.DEL	.EQU	$7F	; rubout (delete)
 #define RSHR(R)		GHI R\ SHR\  PHI R\ GLO R\ SHRC\ PLO R
 #define RSHRC(R)	GHI R\ SHRC\ PHI R\ GLO R\ SHRC\ PLO R
 
-	.EJECT
-;	.SBTTL	Thirty Two Bit Register Pair Macros
+	.SBTTL	"Thirty Two Bit Register Pair Macros"
 
 ; Clear a register pair ...
 #define QCLR(R1,R2)		LDI 0\ PHI R1\ PLO R1\ PHI R2\ PLO R2
@@ -306,8 +307,7 @@ CH.DEL	.EQU	$7F	; rubout (delete)
 #define QBNZ(R2,R1,DST)		  GHI R2\ LBNZ DST\ GLO R2\ LBNZ DST
 #defcont			\ GHI R1\ LBNZ DST\ GLO R1\ LBNZ DST
 
-	.EJECT
-;	.SBTTL	SBC1802 Base Board Definitions
+	.SBTTL	"SBC1802 Base Board Definitions"
 
 ; Memory layout and memory mapped peripherals for the SBC1802 ...
 DPBASE	 .EQU	$FE00	; RAM page set aside for the firmware
@@ -347,8 +347,7 @@ SLUBRG	 .EQU	7	; SLU0/SLU1 baud rate generator
 #define BN_SL0IRQ	BN3	;  "  "  "  no "  "
 #define B_INPUT		B4	; branch on INPUT/ATTENTION pressed
 
-	.EJECT
-;	.SBTTL	Memory Control Register Definitions
+	.SBTTL	"Memory Control Register Definitions"
 
 ;    The SBC1802 supports five memory maps which are selectable by the memory
 ; control register (aka MCR).   The memory map is dynamic and can be changed
@@ -412,8 +411,7 @@ MC.PIRQ	 .EQU	BIT3	; CLEARED when the PIC is requesting an interrupt
 ; only.
 MC.BBAT	 .EQU	BIT6	; if set the backup battery is still good
 
-	.EJECT
-;	.SBTTL	POST Display and Codes
+	.SBTTL	"POST Display and Codes"
 
 ;   The SBC1802 POST display is a single seven segment LED display that's driven
 ; directly by whatever 8 bits are output to port 4 in I/O group 0. This replaces
@@ -450,8 +448,7 @@ POST1	.EQU	$01	;; PD.SEGB+PD.SEGC
 POST0	.EQU	$00	;; PD.SEGA+PD.SEGB+PD.SEGC+PD.SEGD+PD.SEGE+PD.SEGF
 POSTDP	.EQU	$80	;; PD.SEGDP
 
-	.EJECT
-;	.SBTTL	CDP1854 UART Definitions
+	.SBTTL	"CDP1854 UART Definitions"
 
 ; CDP1854 status register bits ...
 SL.THRE	.EQU	BIT7	; transmitter holding register empty
@@ -502,8 +499,7 @@ BD.SLU0	 .EQU	$0F	; COM8116 mask for SLU0 baud setting
 BD.SLU1	 .EQU	$F0	;  "   "   "    "  SLU1  "    "   "
 BD.DFLT	 .EQU	(BD.9600*16)+BD.9600
 
-	.EJECT
-;	.SBTTL	CDP1879 Real Time Clock Definitions
+	.SBTTL	"CDP1879 Real Time Clock Definitions"
 
 ; Register offsets for the real time clock ...
 ;   In the SBC1802 the CDP1879 is memory mapped and these offsets are alll
@@ -562,8 +558,7 @@ RT.CDIS  .EQU	%00000000	; disabled
 RT.AIRQ	 .EQU	BIT7	; alarm generated interrupt request
 RT.CIRQ	 .EQU	BIT6	; clock   "    "    "    "     "
 
-	.EJECT
-;	.SBTTL	CDP1877 Programmable Interrupt Controller Definitions
+	.SBTTL	"CDP1877 Programmable Interrupt Controller Definitions"
 
 ;   The CDP1877 PIC is memory mapped and all of the following register addresses
 ; are relative to the PICBASE constant.  The RCA documentation would have you
@@ -599,8 +594,7 @@ PI.VS4B	.EQU	1	;    "      "    4   "
 PI.VS8B	.EQU	2	;    "      "    8   "
 PI.VS16	.EQU	3	;    "      "   16   "
 
-	.EJECT
-;	.SBTTL	IDE/ATA Interface Definitions
+	.SBTTL	"IDE/ATA Interface Definitions"
 
 ; Classic IDE register definitions...
 ;   Notice that the status register and the command register have the same
@@ -682,8 +676,7 @@ DSKBUF	.EQU	$0000	; temporary disk buffer in low RAM
 #define WRIDE(r,v)	SEX PC\ OUT IDESEL\ .BYTE r\ OUT IDEBUF\ .BYTE v
 #define RDIDE(r)	SEX PC\ OUT IDESEL\ .BYTE r\ SEX SP\ INP IDEBUF
 
-	.EJECT
-;	.SBTTL	TU58 RSP Definitions
+	.SBTTL	"TU58 RSP Definitions"
 
 ;   The SBC1802 supports a serial connection from SLU1 to a PC to emulate
 ; a disk drive.  The protocol used by this connection is the DEC TU58 RSP,
@@ -732,8 +725,8 @@ TUPKSZ:	.EQU	128		; TU58 data packet size
 TUBAUD	.EQU	0;;;DL.PBE!DL3840	; default TU58 baud rate
 ; See the code at TUGET: for the calculation of this timeout ...
 TUTIMO	.EQU	1873		; about 100ms with a 2.5MHz clock
-	.EJECT
-;	.SBTTL	Hardware Flags
+
+	.SBTTL	"Hardware Flags"
 
 ;   The POST leaves a bit vector of the working peripherals stored in RAM at
 ; HWFLAGS.  This is a 16 bit value (there are too many gizmos for just one
@@ -768,23 +761,22 @@ H0.TMR	 .EQU	BIT3	; CDP1878 programmable timer/counter present
 ; installed then ALL I/O instructions must be preceeded by the correct group
 ; selection!  If the expansion board is not present then I/O group selection is
 ; a harmless NOP.  All base board options are in group 1.
-IOGROUP	 .EQU	1	; port 1 is always the I/O group selection
+GROUP	 .EQU	1	; port 1 is always the I/O group selection
 BASEGRP	 .EQU	$1	; I/O group for all base board devices
 MDUGRP	 .EQU	$4	;  "    "    "  CDP1855 multiply/divide unit
 SL1GRP	 .EQU	$4	;  "    "    "  CDP1854 SLU1 (same as MDUGRP!)
-TMRGRP	 .EQU	$2	;  "    "    "  CDP1878 counter/timer
-PPIGRP	 .EQU	$8	;  "    "    "  CDP1851 parallel interface
-PSGGRP	 .EQU	$C	;  "    "    "  AY-3-8912 sound generator
-;   Note that groups 7 and $F are also decoded by the expansion board GAL.
-; These are reserved for future options and the group selection signals are
-; available on the expansion bus connector.
+TMRGRP	 .EQU	$6	;  "    "    "  CDP1878 counter/timer
+PPIGRP	 .EQU	$5	;  "    "    "  CDP1851 parallel interface
+PSGGRP	 .EQU	$7	;  "    "    "  AY-3-8912 sound generator
+;   Note that groups 8 and up are reserved for future options and the group
+; selection bits are available on the expansion bus connector.
 
 
 ;   The base board I/O ports and EF assignments are defined way, way back
 ; on the "Base Board Definitions" page ...
 
 
-; MDU/SLU1 I/O Group definitions...
+; CDP1855 MDU/SLU1 I/O Group definitions...
 SL1BUF	 .EQU	2	; secondary CDP1854 UART data register
 SL1CTL	 .EQU	3	;   "   "      "     "   control
 SL1STS	 .EQU	SL1CTL	;   "   "      "     "   status
@@ -799,7 +791,7 @@ MDUSTS	 .EQU	7	;   "   "   "  "  status register (R/O)
 #define B_SL1SID	B4	;  "  "  "  SLU1 RXD
 
 
-; Timer I/O group definitions ...
+; CDP1878 Timer I/O group definitions ...
 TMRAHI	 .EQU	6	; CDP1878 counter A MSB
 TMRALO	 .EQU	2	; CDP1878 counter A LSB
 TMRCRA	 .EQU	4	; CDP1878 control register A
@@ -811,7 +803,7 @@ TMRSTS	 .EQU	4	; CDP1878 interrupt status
 #define BN_TMRIRQ	BN3	;  "  "   " no "   "
 
 
-; PPI I/O group definitions ...
+; CDP1851 PPI I/O group definitions ...
 PPISTS	 .EQU	2	; CDP1851 status register
 PPICTL	 .EQU	2	; CDP1851 control register
 PPIA	 .EQU	4	; CDP1851 port A
@@ -824,10 +816,11 @@ PPIB	 .EQU	6	; CDP1851 port B
 #define BN_PPIIRQ	BN3	;  "  "   " no   "
 
 
-; PSG I/O group definitions ...
+; AY-3-8912 PSG I/O group definitions ...
+PSGADDR	.EQU	2	; register address (write only)
+PSGDATA	.EQU	3	; data port (read/write)
 
-	.EJECT
-;	.SBTTL	CDP1855 Multiply and Divide Unit Definitions
+	.SBTTL	"CDP1855 Multiply and Divide Unit Definitions"
 
 ;   The CDP1855 is an 8 bit cascadable, well, multiply and divide unit.
 ; The SBC1802 has two of these chips and they're capable of doing a 16x16
@@ -854,8 +847,7 @@ MD.DIV	 .EQU	BIT1		; divide
 ; CDP1855 Status Register bits ...
 MD.OVF	 .EQU	BIT0		; overflow detected
 
-	.EJECT
-;	.SBTTL	CDP1878 Timer Counter Definitions
+	.SBTTL	"CDP1878 Timer Counter Definitions"
 
 ;   The CDP1878 contains two independent 16 bit counter/timer units.  In the
 ; SBC1802, counter/timer A is clocked by the CPU clock (usually 2.5MHz) and
@@ -883,8 +875,7 @@ TM.NOP	 .EQU	$00	; no mode (counter operstion unaffected
 TM.IRQA	 .EQU	BIT7	; timer/counter A interrupt request
 TM.IRQB	 .EQU	BIT6	;   "    "   "  B   "    "    "  "
 
-	.EJECT
-;	.SBTTL	CDP1851 Programmable Parallel Interface Definitions
+	.SBTTL	"CDP1851 Programmable Parallel Interface Definitions"
 
 ;   The CDP1851 contains two independent 8 bit parallel I/O interfaces.  Either
 ; interface may be programmed for input or output on a bit by bit or byte wide
@@ -941,14 +932,13 @@ PP.ASTB	 .EQU	BIT5		; A STROBE   "    "
 PP.BDRY	 .EQU	BIT6		; B READY    "    "
 PP.BSTB	 .EQU	BIT7		; B STROBE   "    "
 
-	.EJECT
-;	.SBTTL	AY-3-8912 Programmable Sound Generator Definitions
+	.SBTTL	"AY-3-8912 Programmable Sound Generator Definitions"
 
 ;   Note that the AY-3-8910, 8912 and 8913 are all identical as far as the
 ; software is concerned.  They differ only in package, pin out and hardware
 ; interface.
 
-;   Another usefule factoid is that the 8910 actually decodes all eight bits of
+;   Another useful factoid is that the 8910 actually decodes all eight bits of
 ; the register select address.  Yes, there are only 16 registers so only the
 ; lower four bits select the register, but the upper four bits MUST be zero or
 ; the chip will ignore us.  Most of the time, that is - it turns out that GI
@@ -960,32 +950,35 @@ PP.BSTB	 .EQU	BIT7		; B STROBE   "    "
 ; parts have found their way onto the market and you will sometimes find chips
 ; that want non-zero select codes.  There's no real way to find out, except by
 ; trial and error...
-PSG_SEL	.EQU	$00		; PSG select code*16 (e.g. $10, $20, etc)
+PSGSEL	.EQU	$00		; PSG select code*16 (e.g. $10, $20, etc)
 
 ;   Define mnemonics for the PSG registers just to make it easier to use the
 ; GI documentation.  BTW, note that GI numbered the registers in OCTAL!
-PSG_R0	.EQU	PSG_SEL+$0	; tone generator low byte, channel A
-PSG_R1	.EQU	PSG_SEL+$1	;  "    "    "   high  " ,    "    "
-PSG_R2	.EQU	PSG_SEL+$2	;  "    "    "   low byte, channel B
-PSG_R3	.EQU	PSG_SEL+$3	;  "    "    "   high  " ,    "    "
-PSG_R4	.EQU	PSG_SEL+$4	;  "    "    "   low byte, channel C
-PSG_R5	.EQU	PSG_SEL+$5	;  "    "    "   high  " ,    "    "
-PSG_R6	.EQU	PSG_SEL+$6	; noise generator control
-PSG_R7	.EQU	PSG_SEL+$7	; mixer and I/O control
-PSG_R10	.EQU	PSG_SEL+$8	; amplitude control, channel A
-PSG_R11	.EQU	PSG_SEL+$9	;  "     "     "        "    B
-PSG_R12	.EQU	PSG_SEL+$A	;  "     "     "        "    C
-PSG_R13	.EQU	PSG_SEL+$B	; envelope period, low byte
-PSG_R14	.EQU	PSG_SEL+$C	;  "    "     "    high  "
-PSG_R15	.EQU	PSG_SEL+$D	; envelope shape and cycle control
-PSG_R16	.EQU	PSG_SEL+$E	; I/O port A data
-PSG_R17	.EQU	PSG_SEL+$F	;  "   "   B   "
+PSGR0	.EQU	PSGSEL+$0	; tone generator low byte, channel A
+PSGR1	.EQU	PSGSEL+$1	;  "    "    "   high  " ,    "    "
+PSGR2	.EQU	PSGSEL+$2	;  "    "    "   low byte, channel B
+PSGR3	.EQU	PSGSEL+$3	;  "    "    "   high  " ,    "    "
+PSGR4	.EQU	PSGSEL+$4	;  "    "    "   low byte, channel C
+PSGR5	.EQU	PSGSEL+$5	;  "    "    "   high  " ,    "    "
+PSGR6	.EQU	PSGSEL+$6	; noise generator control
+PSGR7	.EQU	PSGSEL+$7	; mixer and I/O control
+PSGR10	.EQU	PSGSEL+$8	; amplitude control, channel A
+PSGR11	.EQU	PSGSEL+$9	;  "     "     "        "    B
+PSGR12	.EQU	PSGSEL+$A	;  "     "     "        "    C
+PSGR13	.EQU	PSGSEL+$B	; envelope period, low byte
+PSGR14	.EQU	PSGSEL+$C	;  "    "     "    high  "
+PSGR15	.EQU	PSGSEL+$D	; envelope shape and cycle control
+PSGR16	.EQU	PSGSEL+$E	; I/O port A data
+PSGR17	.EQU	PSGSEL+$F	;  "   "   B   "
 
-; This macro outputs a constant, inline, value to a PSG register ...
-;;#define OUTPSG(r,d)	SEX PC\ OUT PSG_ADDR\ .DB r\ OUT PSG_DATA\ .DB d\ SEX SP
+;
+PSGVOL	.EQU	7	; default volume (0..15)
 
-	.EJECT
-;	.SBTTL	ElfOS and MicroDOS Definitions
+;   This macro outputs a constant, inline, value to a PSG register ..
+; Note that it assumes the correct I/O group has already been selected!!!
+#define OUTPSG(r,d)	SEX PC\ OUT PSGADDR\ .DB r\ OUT PSGDATA\ .DB d
+
+	.SBTTL	"ElfOS and MicroDOS Definitions"
 
 ; ElfOS magic numbers and constants ...
 ;   To boot an ElfOS volume, we read LBN 0 into memory at EO.BBUF.  To verify
@@ -1025,8 +1018,7 @@ DI.CDTL	.EQU	 8	; length of the date field
 DI.UIDO	.EQU	20	; volume label ("User ID") as 44 ASCII characters
 DI.UIDL	.EQU	44	; length of the volume label field
 
-	.EJECT
-;	.SBTTL	RAM Page Storage Map
+	.SBTTL	"RAM Page Storage Map"
 
 ;   The SBC1802 squirrels away one page (224 bytes to be exact) of RAM for the
 ; exclusive use of this firmware.  This is mapped to memory at address $FExx
@@ -1066,7 +1058,7 @@ HWFLAGS: .BLOCK	2	; two bytes of bitmapped H/W test results
 ; And lastly, if BOOTF is 0xFF then the monitor attempts to boot from the
 ; primary IDE drive. 
 AB.NONE	.EQU	$00	; no special action on startup
-AB.DISK	.EQU	$FF	; boot from primary IDE drive
+AB.BOOT	.EQU	$80	; boot storage device specified by low bits
 AB.ADDR	.EQU	$01	; run program at address in RESTA
 ; DON'T CHANGE THE ORDER OF THE FOLLOWING TWO LOCATIONS!
 BOOTF:	.BLOCK	1	; attempt automatic disk boot if non-zero
@@ -1089,10 +1081,7 @@ SL1FMT:	.BLOCK	1	; character format for SLU1
 ; (hopefully) non-volatile, and you'll have to update it every 12 months.
 YEAR:	.BLOCK	1	; year (0..99 only)
 
-; Buffers for time and disk model
-DKUNIT:	.BLOCK	1	; unit (0=master, 1=slave) used by disk commands
-DKSIZE:			; temporary 32 bit disk size
-DKUSED	.EQU	DKSIZE+4; temporary 32 bit disk space used
+; Buffers for time and INPUT/OUTPUT commands ...
 IOTBUF:			; buffer for the INP[UT] and OUT[PUT} commands
 TIMBUF:	.BLOCK	8	; buffer for the DA[TIME] command
 

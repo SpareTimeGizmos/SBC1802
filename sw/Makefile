@@ -34,7 +34,7 @@
 # Tool paths and options - you can change these as necessary...
 TASM=D:/bob/bin/tasm/tasm
 export TASMTABS=D:/bob/bin/tasm/
-TASMOPTS=-t1802 -la -g0 -i -p44 -DTASM -DSBC1802
+TASMOPTS=-t1802 -lat -g0 -i -p44 -DTASM -DSBC1802
 ROMMERGE=D:/bob/bin/rommerge.exe
 ROMCKSUM=D:/bob/bin/romcksum.exe
 ROMTEXT=D:/bob/bin/romtext.exe

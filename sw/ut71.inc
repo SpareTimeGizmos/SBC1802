@@ -1,4 +1,4 @@
-;	.SBTTL	 UT71 Definitions for Spare Time Gizmos SBC1802
+	.SBTTL	"UT71 Definitions for Spare Time Gizmos SBC1802"
 ;	 Bob Armstrong [09-SEP-2021]
 
 
@@ -42,8 +42,7 @@
 ;
 ;--
 
-	.EJECT
-;	.SBTTL	UT71 Registers and Entry Points
+	.SBTTL	"UT71 Registers and Entry Points"
 
 ; UT71 memory layout ...
 UTBASE	.EQU	$8000	; base address for UT71 ROM
