@@ -22,8 +22,8 @@ sret:       equ  r5                    ; register for SRET
 #endif
 
 ; Standard BIOS entry points ...
-f_call      equ  0ffe0h                ; SCRT CALL routine
-f_return    equ  0fff1h                ; SCRT RETURN routine
+f_call      equ  0ffc6h                ; SCRT CALL routine
+f_return    equ  0ffd8h                ; SCRT RETURN routine
 f_boot:     equ  (BIOS+00h)            ; boot from ide device
 f_type:     equ  (BIOS+03h)            ; type 1 character to console
 f_read:     equ  (BIOS+06h)            ; read 1 character from console

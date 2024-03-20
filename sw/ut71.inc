@@ -48,8 +48,10 @@
 UTBASE	.EQU	$8000	; base address for UT71 ROM
 UTSIZE	.EQU	$0800	; size of the UT71 ROM (2K)
 UTCKSM	.EQU	$87FF	; location of UT71 checksum byte
-UTREGS	.EQU	$8C00	; UT71 stores user registers here
-UTSTK	.EQU	$8CFF	; and the UT71 stack grows down from here
+UTDATA	.EQU	$8C00	; UT71 RAM data page
+UTSTACK	.EQU	$8CFF	; UT71 private stack
+UTIOCB	.EQU	$8F00	; bootstrap I/O control block
+
 
 ; Standard UT71 register usage...
 ;   Note that the SCRT registers - SP, PC, CALL, RETN and LINK, are exactly the
@@ -59,60 +61,50 @@ UTSTK	.EQU	$8CFF	; and the UT71 stack grows down from here
 ;CALL	 .EQU	4	; SCRT CALL routine pointer
 ;RETN	 .EQU	5	; SCRT RETURN  "       "
 ;LINK	 .EQU	6	; SCRT caller's argument list pointer
-;UTASL	 .EQU	$D	; used by READAH to assemble hex values
-;UTAUX	 .EQU	$E	; local echo flag and temporary for console I/O
-;UTCHAR	 .EQU	$F	; ASCII character for input/output
+ASL	 .EQU	$D	; used by READAH to assemble hex values
+AUX	 .EQU	$E	; local echo flag and temporary for console I/O
+CHAR	 .EQU	$F	; ASCII character for input/output
+PARA	 .EQU   $F	; parameter list pointer for UT71 calls
 
 ; UT71 SCRT and console I/O entry points ...
-READAH	 .EQU	$813B	; read one hexadecimal character
+UTDELAY	 .EQU	$80EF	; delay routine
+UTREADAH .EQU	$813B	; read one hexadecimal character
 UTREAD	 .EQU	$813E	; read one character into RF.1
 UTYPE5	 .EQU	$81A0	; type character at M(R5)
 UTYPE6	 .EQU	$81A2	; type character at M(R6)
 UTYPE	 .EQU	$81A4	; type character from RF.1
 UTYPE2	 .EQU	$81AE	; type hexadecimal pair from RF.1
-OSTRNG	 .EQU	$83F0	; type ASCIZ string at M(R6)
+UTOSTRNG .EQU	$83F0	; type ASCIZ string at M(R6)
 UTINIT1	 .EQU	$83F3	; initialize R2, R3, R4, R5, X and P
 UTINIT2	 .EQU	$83F6	; initialize R2, R4, R5, X and P (NOT R3!)
-GOUT71	 .EQU	$83F9	; return to ROM command prompt
+UTGOUT71 .EQU	$83F9	; return to ROM command prompt
 UTCKHEX	 .EQU	$83FC	; convert ASCII character in RF.1 to binary in RE.0
-UTCALLR	 .EQU	$8364	; SCRT CALL routine
-UTRETR	 .EQU	$8374	; SCRT RETURN routine
-LINEPR	 .EQU	$850E	; send RF.1 to line printer port
+UTCALL	 .EQU	$8364	; SCRT CALL routine
+UTRET	 .EQU	$8374	; SCRT RETURN routine
+UTLINEPR .EQU	$850E	; send RF.1 to line printer port
 
 ; UT71 floppy disk I/O entry points ...
-CFRETS	 .EQU	$87D8	; command file return point
-READTRS	 .EQU	$87DB	; read multiple sectors by parameter block
-WRITTRS	 .EQU	$87DE	; write  "   "     "    "    "   "     "
-READAS	 .EQU	$87E1	; read sector using existing DMA pointer
-WRITAS	 .EQU	$87E4	; write  "      "     "   "   "   "   "
-RECALS	 .EQU	$87E7	; recalibrate, use R0.0 as unit number
-SEEKAS	 .EQU	$87EA	; seek by track and sector in ASL
-UTCMDS	 .EQU	$87ED	; output command bytes to FDC
-RENTERS	 .EQU	$87F0	; re-enter UT71 (same as GOUT71?)
-UTWAITS	 .EQU	$87F3	; service FDC after command
-UTSEEKS	 .EQU	$87F6	; seek by parameter block
-UTREADS	 .EQU	$87F9	; read sector by parameter block
-UTWRITS  .EQU	$87FC	; write  "    "    "   "     "
-UTCHECK	 .EQU	$87FF	; UT71 checksum
-
-; Other magic addresses ... 
-CFREAD	 .EQU	$8FFD	; MicroDOS command file interpeter entry point
-PGMSRT	 .EQU	$0005	; start address for INIT1
-UTSTACK	 .EQU	$8CFF	; UT71 default stack area
-UTIOCB	 .EQU	$8F00	; MicroDOS loader IOCB
-
-; MicroDOS constants ...
-MDSTACK	 .EQU	$BFFF	; TOP OF STACK
-MDCALL	 .EQU	$91BC	; SCRT CALL ADDRESS
-MDRETN	 .EQU	$919C	; SCRT RETURN ADDRESS
-MDECHO	 .EQU	$910A	; ECHO STATUS
-MDENTRY	 .EQU	$9040	; ENTRY ADDRESS INTO MICRODOS
-MDNAME	 .EQU	$A843	; 'MICRODOS' NAME IN DP SYS
+UTBOOT	  .EQU	$8400	; SBC1802 specific - bootstrap MicroDOS
+UTCFRETS  .EQU	$87D8	; command file return point
+UTREADTRS .EQU	$87DB	; read multiple sectors by parameter block
+UTWRITTRS .EQU	$87DE	; write  "   "     "    "    "   "     "
+UTREADAS  .EQU	$87E1	; read sector using existing DMA pointer
+UTWRITAS  .EQU	$87E4	; write  "      "     "   "   "   "   "
+UTRECALS  .EQU	$87E7	; recalibrate, use R0.0 as unit number
+UTSEEKAS  .EQU	$87EA	; seek by track and sector in ASL
+UTCMDS	  .EQU	$87ED	; output command bytes to FDC
+UTRENTERS .EQU	$87F0	; re-enter UT71 (same as GOUT71?)
+UTWAITS	  .EQU	$87F3	; service FDC after command
+UTSEEKS	  .EQU	$87F6	; seek by parameter block
+UTREADS   .EQU	$87F9	; read sector by parameter block
+UTWRITS   .EQU	$87FC	; write  "    "    "   "     "
+UTCHECK	  .EQU	$87FF	; UT71 checksum
+UTCFREAD  .EQU	$8FFD	; MicroDOS command file interpeter entry point
 
 ; Floppy disk I/O error codes (returned in P2.0) ...
-FDFDDM	 .EQU	$80	; deleted data mark found
-FDDINA	 .EQU	$40	; drive inactive (means what??)
-FDFAIL	 .EQU	$20	; drive failure
-FDPROT	 .EQU	$10	; write protect error
-FDCRCE	 .EQU	$08	; CRC error
-FDTERM	 .EQU	$02	; FDC command abnormal termination
+FD.DDM	 .EQU	$80	; deleted data mark found
+FD.DNR	 .EQU	$40	; drive not ready
+FD.DER	 .EQU	$20	; drive failure
+FD.WPT	 .EQU	$10	; write protect error
+FD.CRC	 .EQU	$08	; CRC error
+FD.ABE	 .EQU	$02	; FDC command abnormal termination

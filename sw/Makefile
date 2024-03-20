@@ -54,6 +54,7 @@ sbc1802.hex:	sbc1802.asm bios.inc ut71.inc sysdat.asm
 	@$(ECHO) -e "\n*** BUILDING SBC1802 MONITOR ***"
 	@$(RM) -f sysdat.asm
 	@$(DATE) +"SYSDAT:	.TEXT	\"%d-%#b-%Y %H:%M\\000\"" >sysdat.asm
+	@$(DATE) +"BUILDY:	.BYTE	%y" >>sysdat.asm
 	@$(TASM) $(TASMOPTS) $< $@
 
 bios1802.hex:	bios1802.asm bios.inc rtl1802.asm 

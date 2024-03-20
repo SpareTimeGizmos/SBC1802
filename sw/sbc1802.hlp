@@ -49,8 +49,16 @@ PROGRAM CONTROL COMMANDS
 
 MASS STORAGE COMMANDS
     DUmp ddd nnnnn		-- dump block nnnnn from storage device ddd
-    Boot ddd			-- Boot mass storage device ddd
+    Boot ddd			-- Boot ELfOS from storage device ddd
     FORMAT ddd			-- format (zero out) storage device ddd
+
+MICRODOS COMMANDS
+    UMap n ddd:filename		-- map virtual diskette drive n to ElfOS file
+    UMap n ddd:			-- map virtual diskette to entire storage device
+    UMap n			-- remove mapping for virtial diskette drive n
+    UMap			-- list all virtual diskette mappings
+    UBoot ddd:filename		-- map virtual diskette 0 too file and boot
+    UBoot			-- boot from already mapped virtual diskette 0
 
 SET COMMANDS
     SEt Q 0|1			-- set or reset Q output

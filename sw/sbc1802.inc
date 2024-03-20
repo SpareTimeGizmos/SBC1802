@@ -1005,9 +1005,9 @@ EB.MDR2	.EQU	$210	; 4 bytes sector of master directory (LAT-32)
 ; media supported by MicroDOS.  The real hardware supports only two drives,
 ; units 0 and 1, however it's fairly easy to trick MicroDOS into supporting
 ; more units.
-MO.SPT	.EQU	 9	; sectors per track
-MO.TPD	.EQU	70	; tracks per diskette
-MO.SPD	.EQU	630	; total sectors per diskette
+UD.SPT	.EQU	 9	; sectors per track
+UD.TPD	.EQU	70	; tracks per diskette
+UD.SPD	.EQU	630	; total sectors per diskette
 
 ; Disk Identification Block ...
 ;   Every MicroDOS diskette has one of these blocks in the first LBN (track 0,
@@ -1017,6 +1017,19 @@ DI.CDTO	.EQU	12	; creation date, in ASCII format "mm/dd/yy"
 DI.CDTL	.EQU	 8	; length of the date field
 DI.UIDO	.EQU	20	; volume label ("User ID") as 44 ASCII characters
 DI.UIDL	.EQU	44	; length of the volume label field
+
+; MicroDOS constants ...
+UDVDKS	 .EQU	8	; number of virtual diskette drives
+UDLOAD	 .EQU	$9000	; kernel load address
+UDBTPSN	 .EQU	11	; first kernel load sector
+UDBTLEN	 .EQU	24	; number of kernel sectors to load
+UDSTACK	 .EQU	$BFFF	; top of MicroDOS initial stack
+UDCALL   .EQU	$918C	; SCRT CALL address
+UDRETURN .EQU	$919C	; SCRT RETURN address
+UDECHO   .EQU	$910A	; echo status
+UDENTRY	 .EQU	$9040	; entry address into MicroDOS
+UDNAME   .EQU	$A843	; 'MICRODOS' name in kernel
+
 
 	.SBTTL	"RAM Page Storage Map"
 
@@ -1093,6 +1106,10 @@ TUCKSM:	.BLOCK	3	; even/odd byte flag and two byte checksum accumulator
 ; THEM IN THIS ORDER!
 PASSK:	.BLOCK	2	; pass count for MEMTEST and other diagnostics
 ERRORK:	.BLOCK	2	; error  "    "     "     "    "        "
+
+; MicroDOS virtual diskette mapping ...
+UTDKMAP:.BLOCK	4*UDVDKS; four bytes for every virtual diskette drive
+UTDKEND:		; end of virtual diskette map
 
 ; Command line buffer...
 CMDMAX	.EQU	64	; maximum command line length

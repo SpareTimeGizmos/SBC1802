@@ -1,8 +1,12 @@
 	.TITLE	"Spare Time Gizmos COSMAC Microsystem"
 ;	.SBTTL	"Bob Armstrong [09-SEP-2021]"
 
-; Make sure the echo flag in BAUD.1 is turned on when there's a trap or power up!
-
+; OSTYPE affects -
+;	RUN - selects memory map in use
+;	CALL - selects memory map in use.  Further, if OSTYPE==MICRODOS,
+;		then SCRT points to the UT71 versions
+;	SET RESTART xxxx - same effect as RUN
+;	SET RESTART BOOT - selects BOOT or UBOOT command
 
 ;    .d8888b.  888888b.    .d8888b.   d888   .d8888b.   .d8888b.   .d8888b.  
 ;   d88P  Y88b 888  "88b  d88P  Y88b d8888  d88P  Y88b d88P  Y88b d88P  Y88b 
@@ -243,6 +247,15 @@
 ; 041	-- Invent TTYINI to set up both SLUs and call it from SYSINI, and also
 ; 	   after a breakpoint/trap.  Also, ensure that BAUD.1 gets set to 1 to
 ;	   enable echo.
+;
+; 042	-- Add UBOOT command to boot MicroDOS.  Start integrating the MicroDOS
+;	   support, especially the diskette mapping.
+;
+; 043	-- Add initial UMAP command to map MicroDOS diskette images.
+;
+; 044	-- Add ElfOS directory walker to find diskette image files.
+;
+; 045	-- Fix up UMAP and UBOOT to use directory walker code.
 ;--
 VERMAJ	.EQU	1	; major version number
 VEREDT	.EQU	41	; and the edit level
@@ -283,7 +296,8 @@ VEREDT	.EQU	41	; and the edit level
 ; EPROM, because we don't want them to be hard to find, after all!
 VERSION:.BYTE	VERMAJ\ .WORD VEREDT
 SYSTEM:	.TEXT	"\r\nSBC1802 FIRMWARE\000"
-RIGHTS:	.TEXT	"Copyright (C) 2021-2024 by Spare Time Gizmos.  All rights reserved.\000"
+RIGHTS:	.TEXT	"Copyright (C) 2021-2024 by Spare Time Gizmos."
+	.TEXT	"  All rights reserved.\000"
 #include "sysdat.asm"
 
 ; Skip over the rest of the space used by UT71 ...
@@ -580,6 +594,20 @@ RAMIN1:	LDI	$00		; set memory to zero
 	STXD			; ...
 	LDI	'R'		; ...
 	STXD			; ...
+
+;   Most of the data page contents are happy being initialized to all zeros,
+; but the virtual diskette mapping for MicroDOS needs to be initialized to
+; $FF. 
+	RLDI(DP,UTDKEND-1)	; it's easiest to do this backwards
+RAMIN2:	SEX DP\ LDI $FF		; set every byte to $FF
+	STXD\ GLO DP		; ...
+	SMI	LOW(UTDKMAP)	; have we done them all
+	LBDF	RAMIN2		; loop until we have
+
+; If the year isn't set, then default to the build year for this firmware ...
+	LDI LOW(YEAR)\   PLO DP	; store in the current year
+	RLDI(P1,BUILDY)\ LDN P1	; get the build year
+	ADI 2000-1972\   STR DP	; correct for years after 2000 and save it
 
 ;   We're done with all memory tests!  Since we know that RAM is OK and useful,
 ; from now on DP will be valid and points to DPBASE, and SP will be valid and
@@ -957,12 +985,12 @@ NOPIC:
 
 ;++
 ;   The next group of POSTs - SLU1, parallel interface, Counter/Timer, 
-; Multiply/Divide unit, and the programmable sound generator - are
-; all expansion board device.  Before we start testing them we need to
-; see if the two level I/O and the expansion board is even installed.
-; If it isn't, then without the group select hardware some of these
-; tests can have bad side effects on base board hardware (e.g. the
-; SLU1 test will screw up the base board SLU0!).  
+; Multiply/Divide unit, and the programmable sound generator - are all
+; expansion board devices.  Before we start testing them we need to see if
+; the two level I/O and the expansion board is even installed.  If it isn't,
+; then without the group select hardware some of these tests can have bad
+; side effects on base board hardware (e.g. the SLU1 test will screw up the
+; base board SLU0!).  
 ;
 ;  If there's no two level I/O, then skip directly to SYSINI2...
 ;--
@@ -1089,26 +1117,24 @@ NOMDU:
 	.SBTTL	"POST 3 - AY-3-8192 Sound Generator Tests"
 
 ;++
-;   POST 3 tests the AY-3-8912 programmable sound generator, aka the PSG.
-; This device has no less than 16 registers, ALL of which are read/write,
-; but all of them just program the output in various ways.  There are no
-; status bits or anything like that which you can monitor for changes.
-; Everything you read back from a register is just the same as what you
-; wrote there a few moments ago!
+;   POST 3 tests the AY-3-8912 programmable sound generator, aka the PSG. This
+; device has no less than 16 registers, ALL of which are read/write, but all of
+; them just program the output in various ways.  There are no status bits or
+; anything like that which you can monitor for changes.  Everything you read
+; back from a register is just the same as what you wrote there a few moments
+; ago!
 ;
-;   That makes a self test kind of challenging, since we have no way to
-; know really whether it is working or not.  The 8910 has two general
-; purpose I/O ports, A and B, which can be programmed as outputs and
-; have no effect on the sound generation.  The 8912 used in the SBC1802
-; only has pins for port A, however internally both registers and ports
-; are still implemented.  It just that on the 8912 only port A is
-; bonded out.
+;   That makes a self test kind of challenging, since we have no way to know
+; really whether it is working or not.  The 8910 has two general purpose I/O
+; ports, A and B, which can be programmed as outputs and have no effect on the
+; sound generation.  The 8912 used in the SBC1802 only has pins for port A,
+; however internally both registers and ports are still implemented.  It just
+; that on the 8912 only port A is bonded out.
 ;
-;  The SBC1802 doesn't use these output pins at all, so we program
-; both ports as outputs and then run thru setting all 256 possible
-; values and reading them back to see if they work.  It's not much
-; of a test for a sound generator, but it at least tells us that the
-; data bus is wired up right.
+;  The SBC1802 doesn't use these output pins at all, so we program both ports
+; as outputs and then run thru setting all 256 possible values and reading them
+; back to see if they work.  It's not much of a test for a sound generator, but
+; it at least tells us that the data bus is wired up right.
 ;--
 PSGTST:	POST(POST3)		; POST code 3 - PSG test
 	OUT	GROUP		; select the PSG I/O group
@@ -1484,8 +1510,7 @@ COMND5:	SEX	P2		; ...
 #define CMD(len,name,routine)	.DB len, name, 0\ .DW routine
 
 ; And here's the actual table of commands ...
-CMDTBL:
-	CMD(2, "DUMP",       DDUMP)	; dump disk blocks
+CMDTBL:	CMD(2, "DUMP",       DDUMP)	; dump disk blocks
 	CMD(1, "BOOT",       BOOCMD)	; boot from the primary IDE disk
 	CMD(1, "EXAMINE",    EXAM)	; examine/dump memory bytes
 	CMD(1, "DEPOSIT",    DEPOSIT)	; deposit data in memory
@@ -1499,9 +1524,10 @@ CMDTBL:
 	CMD(2, "SHOW",       SHOW)	; show parameters and flags
 	CMD(2, "TEST",	     TEST)	; test various hardware bits
 	CMD(6, "FORMAT",     FORMAT)	; "format" a storage device
+	CMD(2, "UMAP",       UMAP)	; map MicroDOS virtual diskettes
+	CMD(2, "UBOOT",	     UBOOT)	; boot MicroDOS operating system
 	CMD(1, ":",          IHEX)	; load Intel .HEX format files
 	CMD(1, ";",	     MAIN)	; a comment
-
 ; The table always ends with a zero byte...
 	.BYTE	0
 
@@ -1929,7 +1955,7 @@ INIRE1:	LDI 0\ STXD		; zap another byte
 	LDI $23\ STR DP		; ... set P=3 and X=2
 	RETURN			; and quit
 
-	.SBTTL	"BOOT Command"
+	.SBTTL	"ElfOS BOOT Command"
 
 ;   The BOOT command attempts to bootstrap ElfOS from the specified storage
 ; device.  The specified device can be any one of ID0, ID1, TU0, or TU1.
@@ -1952,7 +1978,7 @@ AUTOBT:	PUSHD			; save that on the stack
 				; and then continue with the boot process
 
 ; Boot the unit on the stack...
-BOOCM2:	OUTSTR(BOOMSG)		; tell the user what we're doing
+BOOCM2:	OUTSTR(EBTMSG)		; tell the user what we're doing
 	POPD\ PUSHD		; get the unit number back
 	CALL(PRTDEV)		; and type the device name
 	INLMES(" ...")		; ...
@@ -1960,14 +1986,243 @@ BOOCM2:	OUTSTR(BOOMSG)		; tell the user what we're doing
 	POPD			; restore the unit number
 	CALL(F_SDBOOT)		; and ask the BIOS to bootstrap
 	LBDF	DRVERR		; hardware OK but no ElfOS boot
+	SKP			; fall into the NO BOOT code
 
 ; Here if the attached volume is not bootable ...
-NOBOOT:	OUTSTR(BFAMSG)		; ?NOT BOOTABLE
+NOBOOT:	IRX			; remove D from the stack
+NOBOO1:	OUTSTR(BFAMSG)		; ?NOT BOOTABLE
 	RETURN			; ...
 
-; IDE bootstrap messages ...
-BOOMSG:	.TEXT	"Booting \000"
+; ElfOS bootstrap messages ...
+EBTMSG:	.TEXT	"Booting ElfOS from \000"
 BFAMSG:	.TEXT	"?NOT BOOTABLE\r\n\000"
+
+	.SBTTL	"MicroDOS UBOOT Command"
+
+;++
+;   The UBOOT command boots a MicroDOS diskette image.  Even though UT71 can
+; boot from any diskette unit, it seems that MicroDOS can only boot from unit
+; zero and so that's what we do here.  The command arguments, if any, allow
+; you to map unit 0 at the same time you boot.
+;
+;	>>>UBOOT xxx:file - map diskette unit 0 to file and then boot
+;	- or -
+;	>>>UBOOT xxx:	  - map diskette unit 0 to the entire device and boot
+;	- or -
+;	>>>UBOOT	  - boot from diskette unit 0 (must already be mapped)
+;
+; See the UMAP command for more details on the diskette mapping arguments.
+;--
+UBOOT:	CALL(ISEOL)		; are there any arguments?
+	LBDF	UBOOT1		; no - just boot what we have
+	RCLR(P2)		; try tp map unit zero
+	CALL(UMAP0)		; ...
+	LBDF	DRVERR		; quit now if there's an error
+
+; Make sure diskette unit 0 is mapped to something!
+UBOOT1:	RLDI(DP,UTDKMAP)	; point to the map for unit 0
+	LDN DP\ XRI $FF		; is this slot empty?
+	LBZ	UBOOT9		; can't boot if the drive isn't mapped
+
+;   Now we need to read 24 sectors from the boot device, starting with sector
+; 11.  It'd be great if we could just call UT71 and let it worry about this
+; for us, but it's not mapped and we can't map it yet ('cause if we did then
+; this code would go away!).
+	LDN DP\ ANI $F0		; get the storage device unit mapped 
+	SHR\ SHR\ SHR\ SHR	; right justify it
+	PLO	T3		; and save that for later
+	LDA DP\ ANI $0F\ PHI T2	; then get the rest of the starting LBA
+	LDA DP\ PLO T2		; ...
+	LDA DP\ PHI T1		; ...
+	LDA DP\ ADI UDBTPSN	; add the boot PSN offset
+	PLO T1\ GHI T1\ ADCI 0	; propagate any carry all the way thru
+	PHI T1\ GLO T2\ ADCI 0	; ...
+	PLO T2\ GHI T2\ ADCI 0	; ...
+	PHI T2			; ...
+
+; Now initialize the boot device ...
+	GLO T3\	CALL(F_SDRESET)	; just to be sure it's ready
+	LBDF	DRVERR		; quit now if there's a drive error
+
+;   The MicroDOS kernel needs to load into RAM starting at $9000 and proceeding
+; up to $BFFF (or there abouts).  We need to switch to the ROM1 memory map,
+; which will map RAM1 into low RAM.  That'll make the MicroDOS load address
+; $9000-$8000 ...
+	RLDI(DP,MCR)		; point to the memory control register
+	LDI MC.ROM1\ STR DP	; change to the ROM1 map
+	RLDI(P1,UDLOAD-$8000)	; kernel load address (in RAM1)
+
+; Now all we need to do is to read 24 sectors into memory ...
+	RLDI(P2,UDBTLEN)	; number of sectors to load
+UBOOT2:	GLO T3\ CALL(F_SDREAD)	; read another sector
+	LBDF	DRVERR		; give up if there's an I/O error
+	INC	T1		; increment the LBN
+	GLO T1\ LBNZ UBOOT3	; did the low order LBN word roll over?
+	GHI T1\ LBNZ UBOOT3	; ??
+	INC	T2		; yes carry to the high word
+UBOOT3:	DEC	P2		; decrement the sector count
+	GLO P2\ LBNZ UBOOT2	; loop until we've read 24
+
+;   The MicroDOS boot signature is simply the string "MICRODOS" stored in the
+; kernel at a known location.  Check for this and, if it's not there, then
+; something bad has happened. 
+	RLDI(P1,UDNAME-$8000)	; point to the name in the kernel
+	RLDI(P2,UDOSSIG)	; and point to what we expect to find
+UBOOT4:	LDA P2\ LBZ UBOOT5	; quit when we reach the end of the kep
+	STR SP\ SEX SP		; save the key byte for a moment
+	LDA P1\ XOR		; does the kernel match the key?
+	LBNZ	NOBOO1		; ?NOT BOOTABLE if not
+	LBR	UBOOT4		; loop until the EOS
+
+; Select the MicroDOS memory map and let UT71 handle the rest ...
+UBOOT5:	OUTSTR(UBTMSG)		; "Booting MicroDOS ..."
+	RLDI(R0,UTBOOT)
+	LDI	MC.MDOS
+	LBR	F_RUN
+
+; Here if diskette unit 0 isn't mapped to anything ...
+UBOOT9:	OUTSTR(NMPMSG)		; ?NOT MAPPED
+	RETURN
+NMPMSG:	.TEXT	"?NOT MAPPED\r\n\000"
+
+; MicroDOS boot message ...
+UBTMSG:	.TEXT	"Booting MicroDOS ...\r\n\000"
+
+; MicroDOS kernel signature ...
+UDOSSIG:.TEXT	"MICRODOS\000"
+
+	.SBTTL	"Map MicroDOS Diskette Units"
+
+;++
+;   The UMAP command can map or display the mapping for MicroDOS diskette
+; drives.  For example,
+;
+;	>>>UMAP n xxx:file - map virtual diskette n to "file" on device xxx
+;	- or -
+;	>>>UMAP n xxx:	   - map virtual diskette n to the entire device xxx
+;	- or -
+;	>>>UMAP n	   - unmap virtual diskette n
+;	- or -
+;	>>>UMAP		   - display all current virtual diskette mappings
+;
+;   The first format maps a virtual diskette drive to a specific container file
+; on an ElfOS file system.  The container file can have any name, but it must
+; be located in the /MicroDOS subdirectory of the ElfOS root directory.  
+; Container files must be exactly 630 sectors long and they must be contiguous.
+; You can create suitable files with the ElfOS create command -
+;
+;	: create -c -s 630s filename
+;
+;   The second form maps a virtual diskette to a complete device - sector zero
+; of the virtual disk is sector zero of the physical storage device, and so on.
+; You want to be careful with this format since any other file system on the
+; device will be overwritten.  Even still this form is handy, especially with
+; TU58 serial disks, because you can mount a MicroDOS diskette image directly.
+;
+;   The third form cancels any existing mapping for the virtual diskette drive,
+; and the fourth form just displays all the current mappings.
+;--
+
+UMAP:	CALL(ISEOL)		; are there any arguments at all?
+	LBDF	ULSMAP		; no - just list the current map
+	CALL(DECNW)		; get the unit number in P2
+	CALL(ISEOL)		; anything more after that?
+	LBDF	UCLRMAP		; no - clear the map entry for this unit
+				; otherwise fall into UMAP0 ...
+
+;++
+;   This subroutine does most of the work for the UMAP and UBOOT commands.
+; The MicroDOS virtual diskette unit should be passed in P2, and this will
+; scan the rest of the command line, figure out what ElfOS storage device and
+; container file is specified, look up that file, and then set up the UTDKMAP
+; mapping for that virtual diskette.
+;
+;   If there are any syntax errors on the command line then it just branches
+; to CMDERR and never returns.  If there are any other errors, such as drive
+; not ready or file not found, it returns DF=1.
+;--
+UMAP0:	GLO P2\ PHI T3		; save the virtual diskette unit
+	ANI $F8\ LBNZ CMDERR	; bail if it's not 0..7
+	CALL(GETDEV)\ PLO T3	; get a device name and save that
+	CALL(ISEOL)		; is there a file name?
+	LBDF	UMAP1		; no use offset zero
+	LDA P1\ SMI ':'		; next character must be a ':'
+	LBNZ	CMDERR		; error if not
+	CALL(ISEOL)		; is there a file name?
+	LBDF	UMAP1		; no use offset zero
+
+; Lookup the container file specified ...
+	RCOPY(P4,P1)		; and the next thing is the file name
+	GLO	T3		; get the storage device unit
+	CALL(FIMAGE)		; and find this image file
+	LBNF	UMAP2		; branch if no error
+	RETURN			; return DF=1 if the file can't be found
+
+; Set up the drive mapping at UTDKMAP ...
+UMAP1:	QCLR(T2,T1)		; no file name - use zero offset
+UMAP2:	GLO T3\ SHL\ SHL	; shift the storage device to the left
+	SHL\ SHL\ STR SP	;  ... four bits
+	GHI T2\ ANI $0F		; and combine it with the LBA
+	SEX SP\ OR\ PHI T2	; ...
+	GHI T3\ SHL\ SHL	; get the virtual diskette *4
+	ADI	LOW(UTDKMAP+3)	; index into the UTDKMAP table
+	PLO	DP		; ...
+	LDI	HIGH(UTDKMAP)	; ...
+	PHI DP\ SEX DP		; ...
+	RSXD(T1)\ RSXD(T2)	; save the LBA offset
+	CDF\ RETURN		; all done
+
+
+;++
+; Clear the MicroDOS virtual disk map for the unit in P2.
+;--
+UCLRMAP:GLO P2\ ANI $F8		; check that the unit is legal
+	LBNZ	CMDERR		; bail out if it's not 0..7
+	GLO P2\ SHL\ SHL	; get the virtual diskette unit *4
+	ADI	LOW(UTDKMAP+3)	; index into the UTDKMAP table
+	PLO	DP		; ...
+	LDI	HIGH(UTDKMAP)	; ...
+	PHI	DP		; ...
+	LDI $FF\ SEX DP		; set all four bytes to $FF
+	STXD\ STXD\ STXD\ STXD	; ...
+	CDF\ RETURN		; and we're done
+
+	.SBTTL	"List MicroDOS Diskette Mapping"
+
+;++
+;   This routine will display all the current MicroDOS virtual diskette
+; mappings.  Unmapped diskette units are skipped, and mapped ones print
+; "... unit n mapped to dddd offset nnnnnn" ...
+;--
+ULSMAP:	RLDI(DP,UTDKMAP)	; point to the MicroDOS diskette table
+	RCLR(P2)		; and count the units here
+
+; See if this drive is mapped ...
+ULSMA1:	LDN DP\ XRI $FF		; does this entry start with $FF?
+	LBNZ	ULSMA2		; no - type it out
+	INC DP\ INC DP		; yes - skip to the next entry
+	INC DP\ INC DP		; ...
+	LBR	ULSMA3		; and keep going
+
+; Type out this entry ...
+ULSMA2:	INLMES("MicroDOS unit "); start the message
+	GLO P2\ CALL(THEX1)	; type type diskette unit number
+	INLMES(" mapped to ")	; ...
+	LDN DP\ ANI $F0		; get the storage device unit
+	SHR\ SHR\ SHR\ SHR	;  ... that it's mapped to
+	CALL(PRTDEV)		; print the device name
+	INLMES(" offset ")	; ...
+	LDA DP\ ANI $0F\ PHI T2	; assemble the base LBN ...
+	LDA DP\ PLO T2		; ...
+	LDA DP\ PHI T1		; ...
+	LDA DP\ PLO T1		; ...
+	LDI 1\ CALL(TDEC32U)	; and type that too
+	CALL(TCRLF)		; all done with this entry
+
+; Move on to the next diskette mapping ...
+ULSMA3:	INC P2\ GLO P2		; have we done all eight?
+	SMI 8\ LBNF ULSMA1	; keep going until we're done
+	RETURN			; that's all of them
 
 	.SBTTL	"DUMP Storage Device Command"
 
@@ -3119,8 +3374,8 @@ SHODRV:	PUSHD\ PHI T2		; we'll need the unit number again!
 	LBR	TCRLF		; finish the line and we're done
 
 ; Here for any error reading the drive ...
-DRVERR:	RLDI(P1,DERMSG)		; ?DRIVE ERROR
-	LBR	F_MSG		; print and return
+DRVERR:	OUTSTR(DERMSG)		; ?DRIVE ERROR
+	SDF\ RETURN		; be sure DF=1 for error return
 
 ; Messages ...
 DERMSG:	.TEXT	"?DRIVE ERROR\r\n\000"
@@ -3465,7 +3720,7 @@ PRTPEK:	RLDI(DP,PASSK)		; point DP at the pass counter
 	INLMES(" ERRORS")	; ...
 	LBR	TCRLF		; finish the line and we're done
 
-	.SBTTL	"Tests AY-3-8912 Sound Generator Chip"
+	.SBTTL	"Test AY-3-8912 Sound Generator Chip"
 
 ;++
 ;--
@@ -3742,23 +3997,181 @@ MUSIC:
 	; End of music ...
 	.BYTE $F0
 
-	.EJECT
-	.EJECT
-	.EJECT
-	.EJECT
-	.EJECT
-	.EJECT
-	.EJECT
-	.EJECT
-	.EJECT
-	.EJECT
-	.EJECT
-	.EJECT
-	.EJECT
-	.EJECT
-	.EJECT
-;;	.TEXT	"THIS IS GARBAGE JUST TO CHANGE THE CHECKSUM"
-	.EJECT
+	.SBTTL	"Find ElfOS Root Directory"
+
+;++
+;   This routine will find and return the LBA of the ElfOS root directory on
+; the specified mass storage device.  We do this by reading the boot sector
+; from the device, extracting the pointer to the root directory, and then
+; converting from ElfOS "lumps" to a real LBA.
+;
+;CALL:
+;	<D contains storage device unit>
+;	CALL(FROOT)
+;	<return DF=1 if error>
+;	<return root LBA in T2,T1>
+;--
+
+; First read the boot sector for this device ...
+FROOT:	PLO	P4		; save the unit in a safe place
+	CALL(F_SDRESET)		; initialize this storage device
+	LBDF	FROOT1		; just give up if that fails
+	RLDI(P1,DSKBUF)		; point to the disk buffer
+	QCLR(T2,T1)		; and read sector zero
+	GLO	P4		; from this unit
+	CALL(F_SDREAD)		; ...
+	LBDF	FROOT1		; once again, give up if error
+
+; Extract the pointer to the master directory ...
+	RLDI(P1,DSKBUF+$012C)	; point to the DIRENT for the root directory
+				; fall into LMP2SEC and return ...
+
+;   This little routine will extract a 28 bit ElfOS "lump" from the disk buffer,
+; convert it to a sector number, and return it.  A pointer to the disk buffer
+; should be passed in P1 and the sector number is returned in T2,T1.
+LMP2SEC:LDA P1\ PHI T2		; copy the lump to T2, T1
+	LDA P1\ PLO T2		; ...
+	LDA P1\ PHI T1		; ...
+	LDA P1\ PLO T1		; ...
+	LDI 3\ PLO P1		; now shift left 3 bits
+LMP2SE1:GLO T1\ SHL\  PLO T1	; ...
+	GHI T1\ SHLC\ PHI T1	; ...
+	GLO T2\ SHLC\ PLO T2	; ...
+	GHI T2\ SHLC		; ...
+	ANI $0F\ PHI T2		; ...
+	DEC P1\ GLO P1		; ...
+	LBNZ	LMP2SE1		; loop for three bits
+	CDF			; always return DF=0 for success
+FROOT1:	RETURN			; and we're done
+
+	.SBTTL	"Search ElfOS Directory"
+
+;++
+;   This routine will search an ElfOS directory for an entry matching the
+; specified file name.  On call, P4 contains a pointer to the desired name
+; and T2,T1 should contain the LBA of the first sector in the directory to
+; be searched.
+;
+;   Note that each ElfOS "lump" contains 8 sectors, and each lump always begins
+; with an LBA where the lower three bits are zero.  That means we can find the
+; next sector in a lump just by incrementing the low byte of the LBA and there's
+; no need to worry about carrys.  When the low three bits of the LBA reach 7,
+; then we've hit the end of this lump and need to find the next one.
+;
+;   Lumps allocated to files and directories are not necessarily consectutive
+; and this routine just doesn't deal with that case.  When we hit the end of
+; this directory's lump, we give up searching.  Each sector can contain 16
+; directory entries and with 8 sectors per lunp, that means any directory we
+; search must contain no more than 128 files.
+;
+;CALL:
+;	<T2,T1 contains LBA of first directory sector>
+;	<P4 points to ASCIZ string of desired file name>
+;	<D contains the storage unit number>
+;	CALL(FFILE)
+;	<return DF=1 if drive error OR file not found>
+;	<if success, return LBA of matching file in T2,T1>
+;
+; REMEMBER that ElfOS file names are case sensitive!
+;--
+FFILE:	PLO	T3		; save the unit in case we have to read more
+
+; Read the first or next sector of the root directory ...
+FFILE1:	RLDI(P1,DSKBUF)		; read into this buffer address
+	GLO	T3		; ... from this unit
+	CALL(F_SDREAD)		; ...
+	LBDF	FFILE9		; give up on errors
+	RLDI(P1,DSKBUF)		; use P1 as a DIRENT pointer
+
+;   Each ElfOS directory entry contains 32 bytes, and if the first four bytes
+; of an entry are zero then that slot is empty and should be skipped. Otherwise
+; the name of the file is stored in ASCIZ starting at offset $0C.
+;
+;   Note that since we know the DSKBUF is aligned on a 256 byte boundary, and
+; since we know that each DIRENT is 32 bits ($20 in hex!), we can cheat on
+; some of the arithmetic here.  For example, to get back to the start of the
+; current DIRENT we can just zero the low 5 bits.  And to advance to the next
+; DIRENT, we can OR with $1F and then increment once.  Sneaky, but saves a
+; lot of code!
+FFILE2:	LDA P1\ SEX P1		; check the first four bytes
+	OR\ INC P1		; ... byte 2
+	OR\ INC P1\ OR		; ... bytes 3 and 4
+	LBZ	FFILE8		; branch if all are zero
+
+; Now compare the file names ...
+	GLO P1\ ANI $E0		; point to offset $0C
+	ORI $0C\ PLO P1		; ...
+	RCOPY(P2,P4)		; and point to the name we want to match
+	CALL(F_STRCMP)		; compare the two names
+	LBNZ	FFILE8		; if no match, on to the next entry
+
+;   Here if we find a match - load the starting lump for this file, convert
+; it to an LBA, and then return success!
+	GLO P1\ ANI $E0\ PLO P1	; back up to the start of this entry
+	LBR	LMP2SEC		; convert to a sector and we're done
+
+; Here to move on to the next directory entry ...
+FFILE8:	GLO P1\ ORI $1F		; increment P1 to the next DIRENT
+	ADI 1\ PLO P1		; ...
+	LBNZ	FFILE2		; keep looking if not the end of this sector
+	GHI P1\ ANI 1		; 9 bits have to be zero for the end of sector
+	LBNZ	FFILE2		; ...
+	INC	T1		; move to the next sector in the lump
+	ANI $7\ LBNZ FFILE1	; keep going if not the end of the lump
+
+; Reached the end of this lump - give up and return error ...
+	LDI $FF\ LSKP		; return D=$FF for file not found
+FFILE9:	LDI $00			; return D=$00 for a drive error
+	SDF\ RETURN		; and DF=1 for any error!
+
+	.SBTTL	"Find MicroDOS Diskette Image"
+
+;++
+;   This routine will search an ElfOS file system to find a file with the
+; name specified containing a MicroDOS diskette image.  The ElfOS storage
+; device number should be passed in D, and a pointer to the name of the
+; diskette image file should be passed in P4.  If it succeeds, it returns
+; with DF=0 and the LBA of the image file in (T2,T1), and if it fails then
+; it prints a nice error message and returns with DF=1.
+;
+;CALL:
+;	<P4 points to ASCIZ string of desired file name>
+;	<D contains the storage unit number>
+;	CALL(FIMAGE)
+;	<return DF=1 if drive error OR file not found>
+;	<if success, return LBA of matching file in T2,T1>
+;--
+FIMAGE:	PLO T3\ PUSHR(P4)       ; save the file name and storage device number
+	GLO T3\ CALL(FROOT)	; find the root directory on that device
+	LBDF	FIMAG4		; quit now if there's a hardware error
+	RLDI(P4,UDOSDIR)	; look for the MicroDOS subdirectory first
+	GLO T3\ CALL(FFILE)	; go search
+	LBNF	FIMAG3		; branch if no error
+	LBZ	FIMAG4		; drive error if D=0
+	IRX\ IRX		; remove P4 from the stack
+FIMAG1:	OUTSTR(FILENF)		; ?FILE NOT FOUND
+	SDF\ LSKP		; DF=1 for error
+FIMAG2:	CDF\ RETURN		; DF=0 for success
+
+; We've found the MicroDOS subdirectory - now search for the exact file ...
+FIMAG3:	IRX\ POPRL(P4)		; restore the image file name pointer
+	GLO	T3		; get the storage unit back
+	CALL(FFILE)		; and find this exact file next
+	LBNF	FIMAG2		; branch if we found it!
+	LBZ	DRVERR		; D=0 --> drive error
+	LBR	FIMAG1		; otherwise say "FILE NOT FOUND"
+
+; Here for any hardware error - clean up the stack and quit ...
+FIMAG4:	IRX\ IRX\		; remove P4 from the stack
+	LBR	DRVERR		; print "?DRIVE ERROR" and return DF=1
+
+; Name of the MicroDOS subdirectory ...
+UDOSDIR:.TEXT	"MicroDOS\000"
+
+; File not found ...
+FILENF:	.TEXT	"?FILE NOT FOUND\r\n\000"
+	
+	.SBTTL	"Command Parsing Functions"
 
 ;   Here to confirm a really dangerous operation.  We return DF=1 if the user
 ; types either "Y" or "y", and DF=0 for absolutely anything else.
@@ -3773,7 +4186,6 @@ YESORNO:CALL(F_READ)\ CALL(FOLD); read one character from console
 CONFI1:	SDF\ LBR TCRLF		; yes - return DF=1
 CNFMSG:	.TEXT	"ARE YOU SURE?\000"
 
-	.SBTTL	"Command Parsing Functions"
 
 ;   Examine the character pointed to by P1 and if it's a space, tab, or end
 ; of line (NULL) then return with DF=1...

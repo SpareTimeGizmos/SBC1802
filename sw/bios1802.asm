@@ -1567,7 +1567,8 @@ IDDFLS:	RDIDE(IDESTS)		; read the drive status
 ; REGISTERS USED
 ; T1 contains the block/sector number and is preserved on return
 ; T2 is used by TUGET for the timeout and is zeroed on return
-; P1 is used as a pointer to the data buffer
+; P1 is used as a pointer to the data buffer and on return P1 points to
+;      the next byte AFTER the buffer end!
 ; P2 is used as a transfer counter, and also by TUREND, and is preserved
 ; DP is used by all the checksum code and is preserved on return
 ;--
