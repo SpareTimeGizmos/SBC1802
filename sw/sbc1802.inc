@@ -1,4 +1,4 @@
-	.SBTTL	"Spare Time Gizmos SBC1802 Definitions"
+	.SBTTL	Spare Time Gizmos SBC1802 Definitions
 
 ;++
 ;       Copyright (C) 2006-2020 By Spare Time Gizmos, Milpitas CA.
@@ -32,7 +32,7 @@
 ;0000000001111111111222222222233333333334444444444555555555566666666667777777777
 ;1234567890123456789012345678901234567890123456789012345678901234567890123456789
 
-	.SBTTL	"Register Definitions and Subroutine Linkages"
+	.SBTTL	Register Definitions and Subroutine Linkages
 
 ; Hardware defined registers...
 PC0	.EQU	0	; PC register for initialization
@@ -80,7 +80,7 @@ P4	.EQU	$B	;  and fourth...
 ; of D, from the time of the CALL, being left in BAUD.0!
 BAUD	.EQU	$E	; unused on the SBC1802
 
-	.SBTTL	"Generic Definitions"
+	.SBTTL	Generic Definitions
 
 ; Bit equates ...
 BIT0	.EQU	%0000000000000001
@@ -117,7 +117,7 @@ CH.CTU	.EQU	$15	; control-U (erase input)
 CH.ESC	.EQU	$1B	; control-[ (escape)
 CH.DEL	.EQU	$7F	; rubout (delete)
 
-	.SBTTL	"Useful Macro Definitions"
+	.SBTTL	Useful Macro Definitions
 
 ; Advance the current origin to the next page...
 #define PAGE	.ORG (* + $FF) & $FF00
@@ -160,7 +160,7 @@ DLYCONS	.EQU	155		; magic constant for 2mS at 2.5MHz
 ; That's not many when it comes to messages, so use INLMES with caution...
 #define	INLMES(str)	CALL(F_INMSG)\ .TEXT str \ .BYTE 0
 
-	.SBTTL	"Instructions I Wish the 1802 Had"
+	.SBTTL	Instructions I Wish the 1802 Had
 
 ;   These macros define some additional mnemonics and a few simple instructions
 ; that the 1802 should have had all along!
@@ -202,7 +202,7 @@ DLYCONS	.EQU	155		; magic constant for 2mS at 2.5MHz
 ; ONLY be used during the actual POST testing because it assumes P=0!
 #define POST(n)		SEX PC0\ OUT LEDS\ .BYTE n
 
-	.SBTTL	"Sixteen Bit Register Operation Macros"
+	.SBTTL	Sixteen Bit Register Operation Macros
 
 ;   Note that many of these (though not all of them!)  are all compatible with
 ; the 1804/5/6 CPU and, if you had one of those CPUs and were so inclined, you
@@ -250,7 +250,7 @@ DLYCONS	.EQU	155		; magic constant for 2mS at 2.5MHz
 #define RSHR(R)		GHI R\ SHR\  PHI R\ GLO R\ SHRC\ PLO R
 #define RSHRC(R)	GHI R\ SHRC\ PHI R\ GLO R\ SHRC\ PLO R
 
-	.SBTTL	"Thirty Two Bit Register Pair Macros"
+	.SBTTL	Thirty Two Bit Register Pair Macros
 
 ; Clear a register pair ...
 #define QCLR(R1,R2)		LDI 0\ PHI R1\ PLO R1\ PHI R2\ PLO R2
@@ -307,7 +307,7 @@ DLYCONS	.EQU	155		; magic constant for 2mS at 2.5MHz
 #define QBNZ(R2,R1,DST)		  GHI R2\ LBNZ DST\ GLO R2\ LBNZ DST
 #defcont			\ GHI R1\ LBNZ DST\ GLO R1\ LBNZ DST
 
-	.SBTTL	"SBC1802 Base Board Definitions"
+	.SBTTL	SBC1802 Base Board Definitions
 
 ; Memory layout and memory mapped peripherals for the SBC1802 ...
 DPBASE	 .EQU	$FE00	; RAM page set aside for the firmware
@@ -326,7 +326,9 @@ CHKSUM	 .EQU	$FFFE	; EPROM checksum is stored in the last two bytes
 EPROM	 .EQU	$8000	; address of EPROM in ROM0 and ROM1 maps
 COLD	 .EQU	EPROM+0	; cold start entry vector
 WARM	 .EQU	EPROM+5	; warm start/breakpoint trap entry vector
+BASIC	 .EQU	$B000	; BASIC interpreter entry point
 HELP	 .EQU	$E000	; address of help text (from the ROMTEXT program)
+XVECTORS .EQU	$EFE0	; XMODEM (and others) vector table used by BASIC
 USRRAM	 .EQU	$EFFF	; top of RAM space available to the user
 
 ; Standard I/O ports implemented on the base board ...
@@ -347,8 +349,9 @@ SLUBRG	 .EQU	7	; SLU0/SLU1 baud rate generator
 #define BN_SL0IRQ	BN3	;  "  "  "  no "  "
 #define B_INPUT		B4	; branch on INPUT/ATTENTION pressed
 
-	.SBTTL	"Memory Control Register Definitions"
+	.SBTTL	Memory Control Register Definitions
 
+;++
 ;    The SBC1802 supports five memory maps which are selectable by the memory
 ; control register (aka MCR).   The memory map is dynamic and can be changed
 ; at any time just by writing a new value to the MCR, with some caution. Map
@@ -385,6 +388,7 @@ SLUBRG	 .EQU	7	; SLU0/SLU1 baud rate generator
 ; even though only half of it is mapped at any time.  The BOOT map is selected
 ; after a hardware reset and ensures that the 1802 (which starts execution at
 ; address zero) begins running the EPROM code.
+;--
 
 ; Memory control register bits ...
 MC.BOOT	 .EQU	%000	; boot time memory map
@@ -448,7 +452,7 @@ POST1	.EQU	$01	;; PD.SEGB+PD.SEGC
 POST0	.EQU	$00	;; PD.SEGA+PD.SEGB+PD.SEGC+PD.SEGD+PD.SEGE+PD.SEGF
 POSTDP	.EQU	$80	;; PD.SEGDP
 
-	.SBTTL	"CDP1854 UART Definitions"
+	.SBTTL	CDP1854 UART Definitions
 
 ; CDP1854 status register bits ...
 SL.THRE	.EQU	BIT7	; transmitter holding register empty
@@ -499,7 +503,7 @@ BD.SLU0	 .EQU	$0F	; COM8116 mask for SLU0 baud setting
 BD.SLU1	 .EQU	$F0	;  "   "   "    "  SLU1  "    "   "
 BD.DFLT	 .EQU	(BD.9600*16)+BD.9600
 
-	.SBTTL	"CDP1879 Real Time Clock Definitions"
+	.SBTTL	CDP1879 Real Time Clock Definitions
 
 ; Register offsets for the real time clock ...
 ;   In the SBC1802 the CDP1879 is memory mapped and these offsets are alll
@@ -558,7 +562,7 @@ RT.CDIS  .EQU	%00000000	; disabled
 RT.AIRQ	 .EQU	BIT7	; alarm generated interrupt request
 RT.CIRQ	 .EQU	BIT6	; clock   "    "    "    "     "
 
-	.SBTTL	"CDP1877 Programmable Interrupt Controller Definitions"
+	.SBTTL	CDP1877 Programmable Interrupt Controller Definitions
 
 ;   The CDP1877 PIC is memory mapped and all of the following register addresses
 ; are relative to the PICBASE constant.  The RCA documentation would have you
@@ -594,7 +598,7 @@ PI.VS4B	.EQU	1	;    "      "    4   "
 PI.VS8B	.EQU	2	;    "      "    8   "
 PI.VS16	.EQU	3	;    "      "   16   "
 
-	.SBTTL	"IDE/ATA Interface Definitions"
+	.SBTTL	IDE/ATA Interface Definitions
 
 ; Classic IDE register definitions...
 ;   Notice that the status register and the command register have the same
@@ -676,7 +680,30 @@ DSKBUF	.EQU	$0000	; temporary disk buffer in low RAM
 #define WRIDE(r,v)	SEX PC\ OUT IDESEL\ .BYTE r\ OUT IDEBUF\ .BYTE v
 #define RDIDE(r)	SEX PC\ OUT IDESEL\ .BYTE r\ SEX SP\ INP IDEBUF
 
-	.SBTTL	"TU58 RSP Definitions"
+	.SBTTL	XMODEM Definitions
+
+; XMODEM protocol constants ..
+XDATSZ	.EQU	128		; data (payload) size in XMODEM record
+XPKTSZ	.EQU	XDATSZ+5	; overall XMODEM packet size (header+data)
+XTIMEO	.EQU	5000		; protocol timeout, in 2ms units (10s)
+
+;   These are the XMODEM buffer locations that overlap DSKBUF.  Needless to
+; say, this part of RAM CANNOT BE UPLOADED OR DOWNLOADED!  DSKBUF normally
+; lives from $0000 to $01FF in RAM0.
+XHDR1	.EQU	DSKBUF		; received SOH or EOT
+XHDR2	.EQU	XHDR1+1		; received block number
+XHDR3	.EQU	XHDR2+1		; received "inverse" block number
+XBUFFER	.EQU	XHDR3+1		; 128 bytes of received data
+XHDR4	.EQU	XBUFFER+XDATSZ	; received checksum
+
+; XMODEM protocol special characters ...
+CH.SOH	.EQU	$01	; start of a data block
+CH.EOT	.EQU	$04	; end of file
+CH.ACK	.EQU	$06	; packet received OK
+CH.NAK	.EQU	$15	; packet not OK - retransmit
+CH.SUB	.EQU	$1A	; filler for partial data blocks
+
+	.SBTTL	TU58 RSP Definitions
 
 ;   The SBC1802 supports a serial connection from SLU1 to a PC to emulate
 ; a disk drive.  The protocol used by this connection is the DEC TU58 RSP,
@@ -721,12 +748,12 @@ TUEBLK	.EQU	WORD(-55)	; block number > 511
 
 ; Other TU58 related constants
 TUMAXB	.EQU	512		; maximum TU58 block number
-TUPKSZ:	.EQU	128		; TU58 data packet size
+TUPKSZ	.EQU	128		; TU58 data packet size
 TUBAUD	.EQU	0;;;DL.PBE!DL3840	; default TU58 baud rate
 ; See the code at TUGET: for the calculation of this timeout ...
 TUTIMO	.EQU	1873		; about 100ms with a 2.5MHz clock
 
-	.SBTTL	"Hardware Flags"
+	.SBTTL	Hardware Flags
 
 ;   The POST leaves a bit vector of the working peripherals stored in RAM at
 ; HWFLAGS.  This is a 16 bit value (there are too many gizmos for just one
@@ -820,7 +847,7 @@ PPIB	 .EQU	6	; CDP1851 port B
 PSGADDR	.EQU	2	; register address (write only)
 PSGDATA	.EQU	3	; data port (read/write)
 
-	.SBTTL	"CDP1855 Multiply and Divide Unit Definitions"
+	.SBTTL	CDP1855 Multiply and Divide Unit Definitions
 
 ;   The CDP1855 is an 8 bit cascadable, well, multiply and divide unit.
 ; The SBC1802 has two of these chips and they're capable of doing a 16x16
@@ -847,7 +874,7 @@ MD.DIV	 .EQU	BIT1		; divide
 ; CDP1855 Status Register bits ...
 MD.OVF	 .EQU	BIT0		; overflow detected
 
-	.SBTTL	"CDP1878 Timer Counter Definitions"
+	.SBTTL	CDP1878 Timer Counter Definitions
 
 ;   The CDP1878 contains two independent 16 bit counter/timer units.  In the
 ; SBC1802, counter/timer A is clocked by the CPU clock (usually 2.5MHz) and
@@ -875,7 +902,7 @@ TM.NOP	 .EQU	$00	; no mode (counter operstion unaffected
 TM.IRQA	 .EQU	BIT7	; timer/counter A interrupt request
 TM.IRQB	 .EQU	BIT6	;   "    "   "  B   "    "    "  "
 
-	.SBTTL	"CDP1851 Programmable Parallel Interface Definitions"
+	.SBTTL	CDP1851 Programmable Parallel Interface Definitions
 
 ;   The CDP1851 contains two independent 8 bit parallel I/O interfaces.  Either
 ; interface may be programmed for input or output on a bit by bit or byte wide
@@ -932,7 +959,7 @@ PP.ASTB	 .EQU	BIT5		; A STROBE   "    "
 PP.BDRY	 .EQU	BIT6		; B READY    "    "
 PP.BSTB	 .EQU	BIT7		; B STROBE   "    "
 
-	.SBTTL	"AY-3-8912 Programmable Sound Generator Definitions"
+	.SBTTL	AY-3-8912 Programmable Sound Generator Definitions
 
 ;   Note that the AY-3-8910, 8912 and 8913 are all identical as far as the
 ; software is concerned.  They differ only in package, pin out and hardware
@@ -978,7 +1005,7 @@ PSGVOL	.EQU	7	; default volume (0..15)
 ; Note that it assumes the correct I/O group has already been selected!!!
 #define OUTPSG(r,d)	SEX PC\ OUT PSGADDR\ .DB r\ OUT PSGDATA\ .DB d
 
-	.SBTTL	"ElfOS and MicroDOS Definitions"
+	.SBTTL	ElfOS and MicroDOS Definitions
 
 ; ElfOS magic numbers and constants ...
 ;   To boot an ElfOS volume, we read LBN 0 into memory at EO.BBUF.  To verify
@@ -1031,7 +1058,7 @@ UDENTRY	 .EQU	$9040	; entry address into MicroDOS
 UDNAME   .EQU	$A843	; 'MICRODOS' name in kernel
 
 
-	.SBTTL	"RAM Page Storage Map"
+	.SBTTL	RAM Page Storage Map
 
 ;   The SBC1802 squirrels away one page (224 bytes to be exact) of RAM for the
 ; exclusive use of this firmware.  This is mapped to memory at address $FExx
@@ -1097,6 +1124,15 @@ YEAR:	.BLOCK	1	; year (0..99 only)
 ; Buffers for time and INPUT/OUTPUT commands ...
 IOTBUF:			; buffer for the INP[UT] and OUT[PUT} commands
 TIMBUF:	.BLOCK	8	; buffer for the DA[TIME] command
+
+;   These are temporary locations used by the XMODEM transmit and receive
+; routines, and in order to save RAM space we share them with the TIMBUF
+; above.  Note that the order of these four locations is critical, so don't
+; change that!
+XINIT	.EQU	TIMBUF+0; send initial ACK or NAK for XRDBLK
+XBLOCK	.EQU	TIMBUF+1; current XMODEM block number
+XCOUNT	.EQU	TIMBUF+2; current XMODEM buffer byte count
+XDONE	.EQU	TIMBUF+3; non-zero when we receive EOT from the host
 
 ; Temporary storage for the TU58 handler code ...
 TUCKSM:	.BLOCK	3	; even/odd byte flag and two byte checksum accumulator

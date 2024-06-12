@@ -1,5 +1,5 @@
-	.TITLE	"Spare Time Gizmos COSMAC Microsystem"
-;	.SBTTL	"Bob Armstrong [09-SEP-2021]"
+	.TITLE	Spare Time Gizmos COSMAC Microsystem
+	.SBTTL	Bob Armstrong [09-SEP-2021]
 
 ; OSTYPE affects -
 ;	RUN - selects memory map in use
@@ -7,6 +7,8 @@
 ;		then SCRT points to the UT71 versions
 ;	SET RESTART xxxx - same effect as RUN
 ;	SET RESTART BOOT - selects BOOT or UBOOT command
+;
+; BYPASS AUTO RESTART IF INPUT IS HELD DOWN
 
 ;    .d8888b.  888888b.    .d8888b.   d888   .d8888b.   .d8888b.   .d8888b.  
 ;   d88P  Y88b 888  "88b  d88P  Y88b d8888  d88P  Y88b d88P  Y88b d88P  Y88b 
@@ -45,7 +47,7 @@
 	.INCLUDE "ut71.inc"	; RCA's UT71 entry points and declarations
 	.LIST
 
-	.SBTTL	"The SBC1802"
+	.SBTTL	The SBC1802
 
 ;++
 ; OVERVIEW
@@ -148,7 +150,7 @@
 ; the AY3-8912 may all be omitted if you're unable to source them.
 ;--
 	
-	.SBTTL	"Revision History"
+	.SBTTL	Revision History
 
 ;++
 ; 001	-- Start by stealing from the Elf2K project!
@@ -234,8 +236,8 @@
 ; 037	-- show the configuration on boot (after the RTC and IDE) so the
 ;	   user will know the POST results
 ;
-; 038	-- If two level I/O (and by inference, the expansion board) isn't installed,
-;	   then skip the POSTs for SLU1, PPI, CTC, MDU and PSG ...
+; 038	-- If two level I/O (and by inference, the expansion board) isn't
+;	   installed, then skip the POSTs for SLU1, PPI, CTC, MDU and PSG ...
 ;
 ; 039	-- Allow "SET RESTART ddd" to boot from any storage unit.  Implement (it
 ;	   wasn't before!) "SET RESTART xxxx".  Change "SET RESTART NONE" to
@@ -256,11 +258,17 @@
 ; 044	-- Add ElfOS directory walker to find diskette image files.
 ;
 ; 045	-- Fix up UMAP and UBOOT to use directory walker code.
+;
+; 046	-- Add BASIC command and RCA BASIC3.
+;
+; 047	-- Add the XMODEM protocol, and the XLOAD and XSAVE commands.
+;
+; 048	-- Add support for BASIC PLOAD/PSAVE via XMODEM.
 ;--
 VERMAJ	.EQU	1	; major version number
-VEREDT	.EQU	41	; and the edit level
+VEREDT	.EQU	48	; and the edit level
 
-	.SBTTL	"Startup Vectors"
+	.SBTTL	Startup Vectors
 
 ;   After a reset the SBC1802 starts up with the BOOT memory map selected.  This
 ; maps the EPROM everywhere, both at addresses $0000 and $8000, and so the first
@@ -348,7 +356,7 @@ RIGHTS:	.TEXT	"Copyright (C) 2021-2024 by Spare Time Gizmos."
 ;   * Interrupts are disabled.
 ;--
 
-	.SBTTL	"POST F - EPROM Test"
+	.SBTTL	EPROM Test
 
 ;   We come here shortly after a cold start.  Interrupts have been disabled and
 ; POST code F is currently displayed, however the memory map is still the BOOT
@@ -395,7 +403,7 @@ ROMCK1: GLO	P2		; get the low byte of the current total
 	LBNZ	$		; ...
 
 ; Fall thru into the MCR/mapping test code...
-	.SBTTL	"POST E - MCR and Memory Mapping Tests"
+	.SBTTL	MCR and Memory Mapping Tests
 
 ;   We know that the EPROM is working but we're still using the BOOT memory map.
 ; The next step is to figure out whether the memory mapping hardware works (more
@@ -474,7 +482,7 @@ MCRTST:	POST(POSTE)		; POST code E - MCR/mapping test
 ; moment.  Totally wasteful, but it looks better when you can see it...
 ;;	DELAY(300)
 
-	.SBTTL	"RAM Key Test"
+	.SBTTL	RAM Key Test
 
 ;   The next step is to figure out whether our private RAM space (at $FExx) is
 ; working AND (assuming we have battery backup) whether the current contents
@@ -508,7 +516,7 @@ KEYTST:	RLDI(P1,KEY)		; P1 points to the RAM key
 ; Here if the current RAM contents are valid...
 	LBR	RAMOK		; skip the RAM test and initialization
 
-	.SBTTL	"POST D and C - Basic RAM test"
+	.SBTTL	Basic RAM test
 
 ;   Now that we know there's nothing in RAM worth keeping, we can do a very
 ; simple but destructive test on both RAM chips.  All this code does is to write
@@ -560,7 +568,8 @@ RAMT31:	LDI 0\ STR P1\ INC P1	; zero another byte
 
 ; Fall into the data page initialization code next ...
 RAMTS4:
-	.SBTTL	"Data Page Initialization"
+
+	.SBTTL	Data Page Initialization
 
 ;   Here when we're done testing RAM.  The ROM0 mapping is still selected, and
 ; we'll leave it that way for the rest of the POST.  The next step is to zero
@@ -622,7 +631,8 @@ RAMOK:	RLDI(P1,MCR)		; be sure ROM0 is selected
 	RCLR(P4)		; and clear the map of working hardware
 
 ; Now fall into the I/O Group tests ...
-	.SBTTL	"POST B - I/O Group Select Tests"
+
+	.SBTTL	I/O Group Select Tests
 
 ;   The next thing is to test whether the I/O group selection register is
 ; present and working.  This hardware is actually part of the expansion board
@@ -676,7 +686,8 @@ GRPTS9:	SEX	PC0		; select the base group
 
 ; And fall into the next test ...
 NOGRP:
-	.SBTTL	"POST A - CDP1854 SLU0 Tests"
+
+	.SBTTL	CDP1854 SLU0 Tests
 
 ;   The next phase in the POST is to test SLU0, the CDP1854 UART that drives the
 ; console terminal port.  The CDP1854 doesn't have a loopback mode and, even
@@ -763,7 +774,8 @@ SL0TS9:	SEX PC0\ OUT SL0CTL	; ...
 
 ; Fall into the next test ...
 NOSLU0:
-	.SBTTL	"POST 9 - CDP1879 Real Time Clock Tests"
+
+	.SBTTL	CDP1879 Real Time Clock Tests
 
 ;   Now test the CDP1879 real time clock chip.  Remember that this chip is
 ; memory mapped at address RTCBASE, so neither I/O instructions nor the I/O
@@ -812,7 +824,8 @@ RTCTS2:	LDI	RT.STRT+RT.O32	; turn off the square wave output
 
 ; Fall into the PIC test ...
 NORTC:
-	.SBTTL	"POST 8 - CDP1877 Programmable Interrupt Controller Tests"
+
+	.SBTTL	CDP1877 Programmable Interrupt Controller Tests
 
 ;   The next test is for the CDP1877 priority interrupt controller, aka PIC.
 ; Like the RTC and MCR, this device is memory mapped.  Worse, it does not have
@@ -981,7 +994,7 @@ PICTST:	POST(POST8)		; POST 8 - CDP1877 PIC tests
 ; Fall into the next test ...
 NOPIC:
 
-	.SBTTL	"Expansion Board Tests"
+	.SBTTL	Expansion Board Tests
 
 ;++
 ;   The next group of POSTs - SLU1, parallel interface, Counter/Timer, 
@@ -998,7 +1011,7 @@ EXPTST:	GHI	P4		; get the hardware flags
 	ANI	H1.TLIO		; was two level I/O discovered?
 	LBZ	SYSIN2		; no - skip all these tests
 
-	.SBTTL	"POST 7 - CDP1854 SLU1 Tests"
+	.SBTTL	CDP1854 SLU1 Tests
 
 ;++
 ;   The next phase in the POST is to test SLU1, the CDP1854 UART that drives
@@ -1102,19 +1115,19 @@ NOSLU1:	SEX	PC0		; restore the default I/O group select
 	OUT	GROUP		; ...
 	 .BYTE	 BASEGRP	; ...
 
-	.SBTTL	"POST 6 - CDP1851 Parallel Port Tests"
+	.SBTTL	CDP1851 Parallel Port Tests
 
 ; Fall into the next test ...
 NOPPI:
-	.SBTTL	"POST 5 - CDP1878 Timer/Counter Tests"
+	.SBTTL	CDP1878 Timer/Counter Tests
 
 ; Fall into the next test ...
 NOCTC:
-	.SBTTL	"POST 4 - CDP1855 Multiply/Divide Tests"
+	.SBTTL	CDP1855 Multiply/Divide Tests
 
 ; Fall into the next test ...
 NOMDU:
-	.SBTTL	"POST 3 - AY-3-8192 Sound Generator Tests"
+	.SBTTL	AY-3-8192 Sound Generator Tests
 
 ;++
 ;   POST 3 tests the AY-3-8912 programmable sound generator, aka the PSG. This
@@ -1183,7 +1196,7 @@ NOPSG:	SEX	PC0		; restore the default I/O group select
 	OUT	GROUP		; ...
 	 .BYTE	 BASEGRP	; ...
 
-	.SBTTL	"POST 2 - Terminal Initialization"
+	.SBTTL	Terminal Initialization
 
 ;   If the RAM contents are valid and a baud rate has been saved, then we'll
 ; restore that setting now.  Note that the baud rate affects both the console
@@ -1243,7 +1256,7 @@ SYSI20:	CALL(TTYINI)		; initialize all the SLU settings
 	CALL(TCRLF)		; and finish the line
 SYSI24:
 
-	.SBTTL	"POST 1 - IDE Disk Drive Initialization"
+	.SBTTL	IDE Disk Drive Initialization
 
 ;++
 ;   In POST 1 we probe for any attached disk drives (they're optional and there
@@ -1337,7 +1350,7 @@ NOMDL1:	CALL(TCRLF)		; ...
 
 ; Here if the IDE drives don't exist or don't work ...	
 NOIDE:
-	.SBTTL	"Software Initialization and Auto Boot"
+	.SBTTL	Software Initialization and Auto Boot
 
 ; First save the hardware flags (the results of all the POST testing) ...
 SYSIN4:	LDI LOW(HWFLAGS+1)	; point to HWFLAGS 
@@ -1380,7 +1393,7 @@ SYSI41:	OUTSTR(HLPMSG)		; always be helpful
 ; A helpful message ...
 HLPMSG:	.TEXT	"\r\nFor help type HELP\r\n\r\n\000"
 
-	.SBTTL	"Command Scanner"
+	.SBTTL	Command Scanner
 
 ;   The restart entry can be reached via the "warm start" vector at $8005.
 ; The only thing that really uses this is the BIOS, and the BIOS will jump here
@@ -1433,7 +1446,7 @@ ERRALL:	CALL(TQUEST)		; print a question mark
 	CALL(TCRLF)		; end the line
 	LBR	MAIN		; and go read a new command
 
-	.SBTTL	"Lookup and Dispatch Command Verbs"
+	.SBTTL	Lookup and Dispatch Command Verbs
 
 ;   This routine is called with P1 pointing to the first letter of a command
 ; (usually the first thing in the command buffer) and P2 pointing to a table
@@ -1492,7 +1505,7 @@ COMND5:	SEX	P2		; ...
 	LDI	0		; always return with D cleared!
 	SEX SP\ SEP PC		; branch to the action routine
 
-	.SBTTL	"Primary Command Table"
+	.SBTTL	Primary Command Table
 
 ;   This table contains a list of all the firmware command names and the
 ; addresses of the routines that execute them.  Each table entry is formatted
@@ -1511,9 +1524,6 @@ COMND5:	SEX	P2		; ...
 
 ; And here's the actual table of commands ...
 CMDTBL:	CMD(2, "DUMP",       DDUMP)	; dump disk blocks
-	CMD(1, "BOOT",       BOOCMD)	; boot from the primary IDE disk
-	CMD(1, "EXAMINE",    EXAM)	; examine/dump memory bytes
-	CMD(1, "DEPOSIT",    DEPOSIT)	; deposit data in memory
 	CMD(3, "INPUT",      INPUT)	; test input port
 	CMD(3, "OUTPUT",     OUTPUT)	;  "   output  "
 	CMD(2, "CALL",       CALUSR)	; "call" a user's program
@@ -1526,12 +1536,18 @@ CMDTBL:	CMD(2, "DUMP",       DDUMP)	; dump disk blocks
 	CMD(6, "FORMAT",     FORMAT)	; "format" a storage device
 	CMD(2, "UMAP",       UMAP)	; map MicroDOS virtual diskettes
 	CMD(2, "UBOOT",	     UBOOT)	; boot MicroDOS operating system
+	CMD(3, "BASIC",	     RBASIC)	; run BASIC3 from ROM
+	CMD(2, "XSAVE",	     XSAVE)	; save memory via XMODEM
+	CMD(2, "XLOAD",	     XLOAD)	; load memory via XMODEM
+	CMD(1, "BOOT",       BOOCMD)	; boot from the primary IDE disk
+	CMD(1, "EXAMINE",    EXAM)	; examine/dump memory bytes
+	CMD(1, "DEPOSIT",    DEPOSIT)	; deposit data in memory
 	CMD(1, ":",          IHEX)	; load Intel .HEX format files
 	CMD(1, ";",	     MAIN)	; a comment
 ; The table always ends with a zero byte...
 	.BYTE	0
 
-	.SBTTL	"Examine Memory Command"
+	.SBTTL	Examine Memory Command
 
 ;  The E[XAMINE] command allows you to examine one or more bytes of memory in
 ; both hexadecimal and ASCII. This command accepts two formats of operands -
@@ -1574,7 +1590,7 @@ EXAM1:	RCOPY(P2,P3)		; copy the address
 	CALL(TCRLF)		; type a CRLF and we're done
 	RETURN			; ...
 
-	.SBTTL	"Generic Memory Dump"
+	.SBTTL	Generic Memory Dump
 
 ;++
 ;   This routine will dump, in both hexadecimal and ASCII, the block of memory
@@ -1642,7 +1658,7 @@ MEMDM8:	GLO P3\ ANI $0F\ XRI $0F; have we done sixteen bytes?
 	LBDF	MEMDM2		; nope, keep going
 MEMDM9:	RETURN			; yep - all done
 
-	.SBTTL	"Deposit Memory Command"
+	.SBTTL	Deposit Memory Command
 
 ;   The D[EPOSIT] stores bytes in memory, and it accepts an address and a list
 ; of data bytes as operands:
@@ -1690,7 +1706,7 @@ CLRME1:	LDI 0\ CALL(DRAM)	; write one byte with zeros
 	DBNZ(P2,CLRME1)		; and loop until they're all done
 	RETURN			; ...
 
-	.SBTTL	"Access All of User RAM"
+	.SBTTL	Access All of User RAM
 
 ;   These two routines, ERAM and DRAM, handle the magic necessary to make all of
 ; RAM accessible to the user.  This might sound trivial, but remember that this
@@ -1769,7 +1785,7 @@ DRAM1:	RLDI(T1,MCR)		; access the memory control register
 	GLO	BAUD		; restore the original contents of D
 	CDF\ RETURN		; signal success and we're done
 
-	.SBTTL	"INPUT Command"
+	.SBTTL	INPUT Command
 
 ;   The IN[PUT] command reads the specified I/O port and prints the byte
 ; received in hexadecimal.  It actually has two forms -
@@ -1821,7 +1837,7 @@ INPUT1:	GLO	P2		; get the desired I/O group
 	GLO P4\ CALL(THEX2)	; finally, type the data we received
 	LBR	TCRLF		; finish the line and we're done here!
 
-	.SBTTL	"OUTPUT Command"
+	.SBTTL	OUTPUT Command
 
 ;   The OUT[PUT] command writes a byte to the specified I/O port.  Like INPUT,
 ; it has two forms depending on whether you want to specify an I/O group
@@ -1837,13 +1853,13 @@ INPUT1:	GLO	P2		; get the desired I/O group
 OUTPUT:	CALL(HEXNW2)		; read at least two arguments - port and data
 
 ; Build an OUT instruction and store it at IOTBUF ...
-	RLDI(P4,IOTBUF)		; point P4 at the IOT buffer
+	RLDI(T1,IOTBUF)		; point T1 at the IOT buffer
 	GLO P3\ ANI 7		; get the port address and trim to 3 bits
 	LBZ	CMDERR		; disallow port zero!
-	ORI $60\ STR P4\ INC P4	; make an OUT and store it in IOTBUF
-	GLO P2\ STR P4\ INC P4	; store the data byte at IOTBUF+1
+	ORI $60\ STR T1\ INC T1	; make an OUT and store it in IOTBUF
+	GLO P4\ STR T1\ INC T1	; store the data byte at IOTBUF+1
 	LDI	$D0+PC		; create a "SEP PC" instruction
-	STR P4\ DEC P4\ DEC P4	; and store that in IOT+2
+	STR T1\ DEC T1\ DEC T1	; and store that in IOT+2
 
 ; Handle the I/O group, if specified ...
 	RLDI(P2,BASEGRP)	; default to the base board I/O group
@@ -1856,8 +1872,8 @@ OUTPUT:	CALL(HEXNW2)		; read at least two arguments - port and data
 OUTPU1:	GLO	P2		; get the desired I/O group
 	STR SP\ SEX SP		; put it on the TOS
 	OUT GROUP\ DEC SP	; select the I/O group
-	SEX	P4		; set X=P for IOT
-	SEP	P4		; and execute the user's OUT instruction
+	SEX	T1		; set X=P for IOT
+	SEP	T1		; and execute the user's OUT instruction
 
 ;   A RETURN here will change the POST display back to 0.  That's OK, but it's
 ; nice to be able to use this command to exercise the display, so we explicitly
@@ -1955,7 +1971,7 @@ INIRE1:	LDI 0\ STXD		; zap another byte
 	LDI $23\ STR DP		; ... set P=3 and X=2
 	RETURN			; and quit
 
-	.SBTTL	"ElfOS BOOT Command"
+	.SBTTL	ElfOS BOOT Command
 
 ;   The BOOT command attempts to bootstrap ElfOS from the specified storage
 ; device.  The specified device can be any one of ID0, ID1, TU0, or TU1.
@@ -1997,7 +2013,7 @@ NOBOO1:	OUTSTR(BFAMSG)		; ?NOT BOOTABLE
 EBTMSG:	.TEXT	"Booting ElfOS from \000"
 BFAMSG:	.TEXT	"?NOT BOOTABLE\r\n\000"
 
-	.SBTTL	"MicroDOS UBOOT Command"
+	.SBTTL	MicroDOS UBOOT Command
 
 ;++
 ;   The UBOOT command boots a MicroDOS diskette image.  Even though UT71 can
@@ -2091,7 +2107,7 @@ UBTMSG:	.TEXT	"Booting MicroDOS ...\r\n\000"
 ; MicroDOS kernel signature ...
 UDOSSIG:.TEXT	"MICRODOS\000"
 
-	.SBTTL	"Map MicroDOS Diskette Units"
+	.SBTTL	Map MicroDOS Diskette Units
 
 ;++
 ;   The UMAP command can map or display the mapping for MicroDOS diskette
@@ -2187,7 +2203,7 @@ UCLRMAP:GLO P2\ ANI $F8		; check that the unit is legal
 	STXD\ STXD\ STXD\ STXD	; ...
 	CDF\ RETURN		; and we're done
 
-	.SBTTL	"List MicroDOS Diskette Mapping"
+	.SBTTL	List MicroDOS Diskette Mapping
 
 ;++
 ;   This routine will display all the current MicroDOS virtual diskette
@@ -2224,7 +2240,7 @@ ULSMA3:	INC P2\ GLO P2		; have we done all eight?
 	SMI 8\ LBNF ULSMA1	; keep going until we're done
 	RETURN			; that's all of them
 
-	.SBTTL	"DUMP Storage Device Command"
+	.SBTTL	DUMP Storage Device Command
 
 ;   The DUMP command can dump disk sectors from either IDE0 (master) or IDE1
 ; (slave) drive.  Sectors are read into memory and then dumped with the regular
@@ -2253,7 +2269,7 @@ DDUMP:	CALL(GETDEV)\ PUSHD	; get the drive number and save that
 	RLDI(P4,DSKBSZ-1)	;  ... to $1FF
 	LBR	MEMDMP		; print that out and we're done
 
-	.SBTTL	"Format Storage Device"
+	.SBTTL	Format Storage Device
 
 ;++
 ;   The FORMAT command will erase all data on a storage device.  It doesn't
@@ -2307,7 +2323,7 @@ FORM99:	RETURN
 FWNMSG:	.TEXT	"THIS WILL ERASE ALL DATA ON \000"
 WRTMSG:	.TEXT	"\rWRITING ... \000"
 
-	.SBTTL	"Scan or Print Storage Device Names"
+	.SBTTL	Scan or Print Storage Device Names
 
 ;   This routine will parse a storage device name - ID0, ID1, TU0 or TU1.
 ; If it succeeds it returns the storage device number in D, as would be used
@@ -2357,7 +2373,101 @@ PRTDEV:	SHL\ SHL		; each name takes 4 bytes
 ; Table of device names; exactly FOUR CHARACTERS EACH!
 DEVNMS	.TEXT	"ID0\000ID1\000TU0\000TU1\000"
 
-	.SBTTL	"HELP Command"
+	.SBTTL	BASIC Support
+
+;++
+;   The BASIC command runs BASIC from ROM.  The BASIC we is the BASIC3 v1.1
+; from the RCA Microboard COSMAC Development System (aka the MCDS, not to be
+; confused with the earlier COSMAC Development System, CDS).  This BASIC 
+; takes 12K of ROM and was written for a "ROM high, RAM low" configuration.
+; Better yet, it was also written to work with the UT62 ROM for the console
+; I/O, which is compatible with the UT71 ROM that we emulate for MicroDOS.
+;
+;   BASIC runs using the ROM0 memory map and all we have to do is jump to
+; it's starting address using R0 as the PC.  The rest takes care of itself.
+;--
+RBASIC:	CALL(CHKEOL)		; no arguments for this command
+	RLDI(R0,BASIC)		; load the BASIC entry point
+	LDI	MC.ROM0		; run with the ROM0 memory map
+	LBR	F_RUN		; and away we go!
+
+
+:++
+;   This routine is called by BASIC for the BYE command.  It will reinitialize
+; everything, including SCRT and the console terminal, and then restarts the
+; monitor.
+;--
+BEXIT:	SEX PC\ DIS		; be sure interrupts are disabled
+	.BYTE (SP<<4) | PC	; P=3, X=2
+	RLDI(CALLPC,F_CALL)	; initialize the CALLPC and ...
+	RLDI(RETPC,F_RETURN)	;  ... RETPC registers ...
+;   When TTYINI returns, SCRT will jump to the address in A, HOWEVER it will
+; still pop two bytes off the stack and load those into the new A.  Since SP
+; was just initialized to $FEDF, that'll reference two non-RAM locations at
+; $FEE0 and $FEE1.  These locations are reserved for memory mapped peripherals,
+; and so just to be save we'll adjust the stack down two bytes ...
+	RLDI(SP,STACK-2)	; initialize the monitor's stack
+	RLDI(A,MAIN)		; set the "return" address to MAIN:
+	LBR	TTYINI		; re-initialize the terminal
+				; and return to MAIN
+
+;++
+;   BASIC calls this routine to save either program or data using XMODEM.  When
+; we get here, BASIC has already switched the SCRT routines to our own BIOS
+; versions, so we're free to call any XMODEM or BIOS functions so long as we
+; preserve all registers.  When BASIC calls us we have
+;
+;	RA (aka DP) = start address
+;	RC (aka P3) = byte count
+;
+;   One thing - when somebody eventually tries to load this data back into
+; BASIC, there's nothing to tell us how many bytes we should load nor where
+; (in RAM) we should put it.  BASIC just assumes we know, and of course XMODEM
+; doesn't save this information.  That means we have to save it, so we add four
+; bytes to the start of the data to save the address and byte count.  We do
+; this by pushing those registers onto the stack and then saving four bytes
+; directly from the stack area, which is slightly clever but works great.
+;
+; Note that P2 (aka RD) is critical to BASIC and we have to preserve it!
+;--
+BSAVE:	CALL(XOPENW)		; open the XMODEM channel to the host
+	LBDF	BASTMO		; branch if failure
+	PUSHR($D)		; save BASIC's RD (aka P2)
+	PUSHR($C)		; put the byte count on the stack first
+	PUSHR($A)		; ... and then the RAM address
+	RCOPY(P3,SP)\ INC P3	; point  to the first of these four bytes
+	RLDI(P2,4)		; ... and save four bytes
+	CALL(XWRITE)		; ...
+	IRX\ POPR(P3)		; now put the actual RAM address in P3
+	POPRL(P2)		;  ... and the actual byte count in P2
+	CALL(XWRITE)		; save the BASIC data
+	IRX\ POPRL($D)		; restore BASIC's RD
+	LBR	XCLOSEW		; close XMODEM and return
+
+;++
+;   And this routine will load a BASIC program or data via XMODEM and it's
+; essentially the reverse of BSAVE, above.  Remember that BASIC doesn't tell
+; us how many bytes to load nor where in RAM to put them - we have to get all
+; that from the four byte header that BSAVE wrote.
+;--
+BLOAD:	CALL(XOPENR)		; open the XMODEM channel to the host
+	PUSHR($D)		; save BASIC's RD (aka P2)
+	DEC SP\ DEC SP\ DEC SP	; make some space on the stack
+	RCOPY(P3,SP)\ DEC SP	; and set P3 to the address of this space
+	RLDI(P2,4)		; ... it's always four bytes
+	CALL(XREAD)		; read the header information first
+	IRX\ POPR(P3)		; put the RAM address from the image in P3
+	POPRL(P2)		; and the byte count in P2
+	CALL(XREAD)		; load the BASIC data
+	IRX\ POPRL($D)		; restore BASIC's  RD
+	LBR	XCLOSER		; close XMODEM and return
+
+
+; Here for BASIC SAVE/LOAD XMODEM time out ...
+BASTMO:	OUTSTR(XTOMSG)		; say "?TIMEOUT"
+	RETURN			; and give up
+
+	.SBTTL	HELP Command
 
 ;   The HELP command prints a canned help file, which is stored in EPROM in
 ; plain ASCII. 
@@ -2365,7 +2475,7 @@ PHELP:	CALL(CHKEOL)		; HELP has no arguments
 	RLDI(P1,HELP)		; nope - just print the whole text
 	LBR	F_MSG		; ... print it and return
 
-	.SBTTL	"SHOW, SET and TEST Commands"
+	.SBTTL	SHOW, SET and TEST Commands
 
 ;   These three little routines parse the SHOW, SET and TEST commands, each of
 ; which takes a secondary argument - e.g. "SHOW RTC", "SET BOOT", or "TEST RAM".
@@ -2414,7 +2524,7 @@ TSTCMD:	CMD(4, "RAM0",   TSTRM0); exhaustive test for RAM0 chip
 	CMD(3, "PSG",	 TSTPSG); AY-3-8912 sound generator
 	.BYTE	0
 
-	.SBTTL	"Display User Context"
+	.SBTTL	Display User Context
 
 ;   This routine will display the user registers that were saved after the last
 ; breakpoint trap.  It's used by the "SHOW REGISTERS" command, and is also
@@ -2465,7 +2575,7 @@ SHORE2:	OUTCHR('R')		; type "Rn="
 ; Messages...
 BPTMSG:	.TEXT	"\r\nBREAK AT \000"
 
-	.SBTTL	"Show the Current Date and Time"
+	.SBTTL	Show the Current Date and Time
 
 ;   The SHOW RTC command shows the current date and time from the CDP1879.
 ; It takes no arguments, and simply calls the SHOWNOW routine.  SHOWNOW is
@@ -2492,7 +2602,7 @@ SHOWNOW:RLDI(P1,TIMBUF)		; point to the six byte buffer
 	OUTSTR(CMDBUF)		; print the date/time
 	RETURN			; and we're all done
 
-	.SBTTL	"Set Current Date and Time"
+	.SBTTL	Set Current Date and Time
 
 ;   The SET RTC command will set the CDP1879 RTC time registers.  Note that the
 ; CDP1879 doesn't actually keep track of the year, but the BIOS will save
@@ -2525,7 +2635,7 @@ SETRTC:	CALL(HWTEST)		; make sure the RTC is installed
 	CALL(SHOWNOW)		; echo the new time
 	LBR	TCRLF		; finish the line and return...
 
-	.SBTTL	"SET YEAR Command"
+	.SBTTL	SET YEAR Command
 
 ;   Unfortunately the CDP1879 RTC does not keep track of the year (I guess
 ; they ran out of registers!) so the BIOS caches the year in our data page
@@ -2565,7 +2675,7 @@ SETYR2:	PLO	P2		; save it in P2
 	CALL(SHOWNOW)		; echo the result
 	LBR	TCRLF		; finish the line and we're done
 
-	.SBTTL	"SET Q Command"
+	.SBTTL	SET Q Command
 
 ;   The "SET Q 0" and "SET Q 1" commands may be used to test the Q output.
 ;
@@ -2589,7 +2699,7 @@ SETQ:	CALL(HEXNW)		; one parameter is required
 RESETQ:	REQ			; reset Q
 	RETURN			; and return
 
-	.SBTTL	"SHOW EF Command"
+	.SBTTL	SHOW EF Command
 
 	PAGE
 
@@ -2667,7 +2777,7 @@ EFS4:	CALL(F_TTY)		; ...
 ; All done!
 	LBR	TCRLF
 
-	.SBTTL	"SHOW BATTERY"
+	.SBTTL	SHOW BATTERY
 
 ;   The SHOW BATTERY command reports the status of the memory and RTC backup
 ; battery.  We don't have an ADC to tell us the exact battery voltage, but
@@ -2692,7 +2802,7 @@ SHOBAT:	INLMES("BATTERY ")	; ...
 SHOBA1:	INLMES("OK")		; ...
 	RETURN
 
-	.SBTTL	"SHOW DP Command"
+	.SBTTL	SHOW DP Command
 
 ;   The SHOW DP command dumps the monitor data page, that is the memory space
 ; from $FE00 thru $FEDF.  It's exactly the same as the equivalent EXAMINE
@@ -2709,7 +2819,7 @@ DDUMP1:	RLDI(P3,DPBASE)		; start dumping from here
 	RLDI(P4,DPEND)		; and stop here
 	LBR	MEMDMP		; dump it out in the usual format
 
-	.SBTTL	"SHOW SLU Command"
+	.SBTTL	SHOW SLU Command
 
 ;   The SHOW SLU command will show the settings, baud rate and character format,
 ; for SLU0 and, if it is installed, SLU1.  Note that SLU0 is fixed at 8N1,
@@ -2791,7 +2901,7 @@ EPEPI:	.BYTE	'O'		; EPE=0 PI=0
 	.BYTE	'E'		; EPE=1 PI=0
 	.BYTE	'N'		; EPE=1 PI=1
 
-	.SBTTL	"SET SLU0/SLU1 Command"
+	.SBTTL	SET SLU0/SLU1 Command
 
 ;   The SET SLU command lets you change the settings for either SLU0 or 1.
 ; For SLU0 only the baud rate can be changed, however for SLU1 both the baud
@@ -2903,7 +3013,7 @@ SETFM5: LDI	SL.SBS		; set the stop bit select bit
 	OR\ STR SP		; with the rest of the flags
 SETFM6:	LDN SP\ RETURN		; return the flag byte and we're done
 
-	.SBTTL	"Initialize Both SLUs Baud and Format"
+	.SBTTL	Initialize Both SLUs Baud and Format
 
 ;++
 ;   This routine will initialize the baud rate generator and character formats
@@ -2948,7 +3058,7 @@ TTYI22:	GHI	P4		; are I/O groups implemented ?
 TTYI23:	LDI 1\ PHI BAUD		; set BAUD.1 to 1
 	RETURN			; and we're done
 
-	.SBTTL	"SHOW CONFIGURATION"
+	.SBTTL	SHOW CONFIGURATION
 
 ;++
 ;   The SHOW CONFIGURATION (SHOW CONF is enough!) command lists the hardware
@@ -3043,7 +3153,7 @@ HWTEST:	LDA A\ PHI T1		; gotta load the argument here
 ; "?xxxx NOT INSTALLED" error for absent hardware ...
 HNIMSG:	.BYTE	" NOT INSTALLED\r\n", 0
 
-	.SBTTL	"SET OSTYPE and SHOW OSTYPE"
+	.SBTTL	SET OSTYPE and SHOW OSTYPE
 
 ;   These commands allow you to set the operating system type and therefore the
 ; memory map used for booting and during user program execution.  Right now
@@ -3099,7 +3209,7 @@ SHOWOS:	RLDI(DP,OSTYPE)\ LDN DP	; get the OSTYPE flag
 	OUTSTR(OSNMDOS)\ RETURN	; nope - say "MICRODOS"
 SHOOS1:	OUTSTR(OSNELOS)\ RETURN	; say "ELFOS"
 
-	.SBTTL	"SET RESTART, SET NORESTART and SHOW RESTART Commands"
+	.SBTTL	SET RESTART, SET NORESTART and SHOW RESTART Commands
 
 ;   The SET RESTART command allows you to specify the action taken by this
 ; firmware on a warm start, i.e. one where the current RAM contents are valid.
@@ -3183,7 +3293,7 @@ RESHLT:	INLMES("NONE")
 RESBOO:	CALL(PRTDEV)		; print the device name
 	LBR	TCRLF		; finish the line and we're done
 
-	.SBTTL	"SHOW CPU Command"
+	.SBTTL	SHOW CPU Command
 
 ;   The SHOW CPU command will figure out whether the CPU is an original 1802 or
 ; the "newer" 1804/5/6.  Better than that, if this system has the CDP1879 RTC
@@ -3287,7 +3397,7 @@ SHOC2A:	SMI	1		;   [2] count down
 	INLMES("000")		; multiply by 1000
 SHOCP9:	LBR	TCRLF		; finish the line and we're done!!!
 
-	.SBTTL	"SHOW DISK and SHOW TAPE Commands"
+	.SBTTL	SHOW DISK and SHOW TAPE Commands
 
 ;++
 ;   The SHOW DISK and SHOW TAPE commands show the status of any attached IDE
@@ -3381,7 +3491,73 @@ DRVERR:	OUTSTR(DERMSG)		; ?DRIVE ERROR
 DERMSG:	.TEXT	"?DRIVE ERROR\r\n\000"
 EOSVOL:	.TEXT	" ElfOS bootable\000"
 
-	.SBTTL	"Load Intel HEX Records"
+	.SBTTL	XMODEM Load and Save
+
+;++
+;   The XSAVE command uploads a chunk of memory to the host as a binary "file"
+; using the XMODEM protocol, and the XLOAD command downloads the same to RAM.
+; XMODEM does have flow control, checksums, error detection and (best of all)
+; error correction, which are all good.  Unlike Intel HEX files however, it
+; does NOT have any kind of address information so it's up to you to make sure
+; that any binary file is loaded into RAM at the right address!
+;
+;	>>>XSAVE bbbb eeee
+; 	- or -
+;	>>>XLOAD bbbb eeee
+;
+; where "bbbb" and "eeee" are the addresses of the first and last bytes to be
+; saved or loaded (similar to the EXAMINE command).
+;
+;   XMODEM always saves data in 128 byte blocks so for XSAVE if the size of the
+; block to be saved is not a multiple of 128, then the last record will be
+; padded with SUB ($1A, Control-Z) bytes.  That's the XMODEM tradition.  For
+; XLOAD, if the host sends more data than the specified address range allows,
+; the extra data will be ignored.  That means that as long as XSAVE and XLOAD
+; have the same parameters, the extra SUB bytes will be ignored.
+;
+;   IMPORTANT - the XMODEM routines use part of DSKBUF, from addresses $0000
+; to $01FF in RAM, as buffer storage.  That makes it impossible to save or
+; load this part of RAM!
+;
+;   And lastly, note that the XMODEM routines fetch or store data from RAM
+; using the ERAM and DRAM routines.  This allows any part of RAM to be accessed
+; regardless of the memory mapping in use.  That also means that it's impossible
+; to save any part of this EPROM, but then you probably don't need to do that.
+;--
+XLOAD:	CALL(HEXNW2)		; we always have two parameters
+	CALL(CHKEOL)		; and then that should be everything
+	CALL(P3LEP4)		; make sure "bbbb" .LE. "eeee"
+	LBNF	CMDERR		; abort if they aren't
+	RCOPY(P1,P3)		; save the starting address temporarily
+	CALL(P4SBP3)		; and then compute eeee-bbbb -> P3
+	CALL(XOPENR)		; open an XMODEM channel with the host
+	RCOPY(P2,P3)		; put the byte count in P2
+	RCOPY(P3,P1)		; and the start address in P3
+	CALL(XREAD)		; read the data with XMODEM
+	LBR	XCLOSER		; close the XMODEM connection and we're done
+
+; Here to upload RAM via XMODEM ...
+XSAVE:	CALL(HEXNW2)		; we always have two parameters
+	CALL(CHKEOL)		; and then that should be everything
+	CALL(P3LEP4)		; make sure "bbbb" .LE. "eeee"
+	LBNF	CMDERR		; abort if they aren't
+	RCOPY(P1,P3)		; save the starting address
+	CALL(P4SBP3)		; compute the byte count
+	CALL(XOPENW)		; open an XMODEM upload channel
+	LBDF	XTOERR		; timeout error
+	RCOPY(P2,P3)		; put the byte count in P2
+	RCOPY(P3,P1)		; and the RAM address in P3
+	CALL(XWRITE)		; send the data with XMODEM
+	LBR	XCLOSEW		; close the connection and we're done
+
+; Here for timeout ...
+XTOERR:	OUTSTR(XTOMSG)		; print "?TIMEOUT"
+	GHI BAUD\ ORI $01	; be sure echo is turned on
+	PHI	BAUD		; ...
+	LBR	MAIN		; and abort
+XTOMSG:	.BYTE	"?TIMEOUT\r\n", 0
+
+	.SBTTL	Load Intel HEX Records
 
 ;   This routine will parse an Intel .HEX file record from the command line and,
 ; if the record is valid, deposit it in memory.  All Intel .HEX records start
@@ -3480,7 +3656,7 @@ IHEX6:	OUTSTR(HCKMSG)
 HCKMSG:	.TEXT	"?CHECKSUM ERROR\r\n\000"
 URCMSG:	.TEXT	"?UNKNOWN RECORD\r\n\000"
 
-	.SBTTL	"Scan Two and Four Digit Hex Values"
+	.SBTTL	Scan Two and Four Digit Hex Values
 
 ;   These routines are used specifically to read Intel .HEX records.  We can't
 ; call the usual HEXNW, et al, functions here since they need a delimiter to
@@ -3516,7 +3692,7 @@ GHEX2:	LDN	P1		; get the first character
 	INC P1\ SDF		; success!
 GHEX20:	RETURN			; and we're all done
 
-	.SBTTL	"TEST RAM0 and TEST RAM1 Commands"
+	.SBTTL	TEST RAM0 and TEST RAM1 Commands
 
 ;   The TEST RAM0 and TEST RAM1 commands run an exhaustive memory test on either
 ; of the two SRAM chips.  You might ask, "why not just test them both at the
@@ -3573,7 +3749,7 @@ MTSMSG:	.TEXT	"TESTING RAM ... PRESS ANY KEY TO ABORT\r\n\000"
 RM0MSG:	.TEXT	"RAM0: \000"
 RM1MSG:	.TEXT	"RAM1: \000"
 
-	.SBTTL	"Exhaustive Memory Test"
+	.SBTTL	Exhaustive Memory Test
 
 ;   This routine will perform an exhaustive test on one of our RAM chips using
 ; the "Knaizuk and Hartmann" algorithm (Proceedings of the IEEE April 1977).
@@ -3670,7 +3846,7 @@ MEMT3C:	DEC	P4		; decremement the modulo 3 counter
 	LBNZ	MEMT3A		; nope - keep going
 	CALL(F_BRKTEST)		; does the user want to stop now?
 	LBDF	MEMT5		; yes - quit now
-
+vv
 ; This pass is completed - move the position of the test byte and repeat...
 	GHI P4\ SMI 1		; decrement the current modulo counter
 	LBL	MEMT4		; branch if we've done three passes
@@ -3687,7 +3863,7 @@ MEMT4:	GLO	P3		; is the test byte $00??
 ; One complete test (six passes total) are completed..
 MEMT5:	CDF\ IRX\ RETURN	; give the success return
 
-	.SBTTL	"Diagnostic Support Routines"
+	.SBTTL	Diagnostic Support Routines
 
 ;   This little routine will clear the current diagnostic pass and error
 ; counts (PASSK and ERRORK).  It's called at the start of most diagnostics.
@@ -3720,7 +3896,7 @@ PRTPEK:	RLDI(DP,PASSK)		; point DP at the pass counter
 	INLMES(" ERRORS")	; ...
 	LBR	TCRLF		; finish the line and we're done
 
-	.SBTTL	"Test AY-3-8912 Sound Generator Chip"
+	.SBTTL	Test AY-3-8912 Sound Generator Chip
 
 ;++
 ;--
@@ -3728,7 +3904,7 @@ TSTPSG:	CALL(CHKEOL)
 	RLDI(P4,MUSIC)
 	LBR	PLAYER
 
-	.SBTTL	"Play Music!"
+	.SBTTL	Play Music!
 
 ;++
 ;   This routine will play music (or any random noise!) using the AY-3-8912
@@ -3774,7 +3950,7 @@ PLAYER:	OUTI(GROUP, PSGGRP)	; select the sound generator I/O group
 	OUTI(GROUP, BASEGRP)	; select the base board I/O group again
 	RETURN			; and back to the monitor
 
-	.SBTTL	"Music Player Loop"
+	.SBTTL	Music Player Loop
 
 ;++
 ;   This is the main loop of the AY-3-8912 music player.  It fetches the next
@@ -3854,7 +4030,7 @@ PLAY31:	LDA	P4		; get the note
 	CALL(PLAYC)		; ... and play channel C
 	LBR	PLAYLP		; ...
 
-	.SBTTL	"PSG Functions to Control the Tone Generators"
+	.SBTTL	PSG Functions to Control the Tone Generators
 
 ; Play the MIDI note in D on tone generator A ...
 PLAYA:	CALL(LDNOTE)		; get the tone generator setting
@@ -3901,7 +4077,7 @@ MUTEB:	OUTPSG(PSGR11, $00)	; ...
 MUTEC:	OUTPSG(PSGR12, $00)	; ...
 	RETURN			; ...
 
-	.SBTTL	"PSG Miscellaneous Subroutines"
+	.SBTTL	PSG Miscellaneous Subroutines
 
 ; Write the byte in D to the PSG register indicated inline ...
 WRPSG:	SEX	A		; point X at the inline register number
@@ -3933,7 +4109,7 @@ LDNOTE:	ADI	PSGKEY		; transpose the note if desired
 	LDN T1\ PLO P1		; and the low byte
 	RETURN			; ...
 
-	.SBTTL	"MIDI Note and Test Music Tables"
+	.SBTTL	MIDI Note and Test Music Tables
 
 ;++
 ;   This table is indexed by the MIDI note number, 0..127, and gives the
@@ -3997,7 +4173,7 @@ MUSIC:
 	; End of music ...
 	.BYTE $F0
 
-	.SBTTL	"Find ElfOS Root Directory"
+	.SBTTL	Find ElfOS Root Directory
 
 ;++
 ;   This routine will find and return the LBA of the ElfOS root directory on
@@ -4044,7 +4220,7 @@ LMP2SE1:GLO T1\ SHL\  PLO T1	; ...
 	CDF			; always return DF=0 for success
 FROOT1:	RETURN			; and we're done
 
-	.SBTTL	"Search ElfOS Directory"
+	.SBTTL	Search ElfOS Directory
 
 ;++
 ;   This routine will search an ElfOS directory for an entry matching the
@@ -4124,7 +4300,7 @@ FFILE8:	GLO P1\ ORI $1F		; increment P1 to the next DIRENT
 FFILE9:	LDI $00			; return D=$00 for a drive error
 	SDF\ RETURN		; and DF=1 for any error!
 
-	.SBTTL	"Find MicroDOS Diskette Image"
+	.SBTTL	Find MicroDOS Diskette Image
 
 ;++
 ;   This routine will search an ElfOS file system to find a file with the
@@ -4171,7 +4347,7 @@ UDOSDIR:.TEXT	"MicroDOS\000"
 ; File not found ...
 FILENF:	.TEXT	"?FILE NOT FOUND\r\n\000"
 	
-	.SBTTL	"Command Parsing Functions"
+	.SBTTL	Command Parsing Functions
 
 ;   Here to confirm a really dangerous operation.  We return DF=1 if the user
 ; types either "Y" or "y", and DF=0 for absolutely anything else.
@@ -4288,17 +4464,19 @@ RTRIM:	LDN P1\ DEC P1		; get a byte and back up
 	INC P1\ INC P1\ STR P1	; in the last non-null byte
 	RETURN
 
-	.SBTTL	"Scan Command Parameter Lists"
+	.SBTTL	Scan Command Parameter Lists
 
 ;   These routines will scan the parameter lists for commands which either
 ; one, two or three parameters, all of which are hex numbers.
 
-; Scan two parameters and return them in registers P4 and P3...
+; Scan two parameters and return them in registers P3 and P4...
 HEXNW2:	CALL(HEXNW)		; scan the first parameter
-	RCOPY(P3,P2)		; and save it
+	RCOPY(P3,P2)		; return that in P3
 	CALL(ISEOL)		; there had better be more there
 	LBDF	CMDERR		; error if not
-				; fall into HEXNW to get another
+	CALL(HEXNW)		; scan the second parameter
+	RCOPY(P4,P2)		; and return that in P4
+	RETURN			; all done
 
 ; Scan a single parameter and return its value in register P2...
 HEXNW:	CALL(F_LTRIM)		; ignore any leading spaces
@@ -4314,23 +4492,22 @@ DECNW:	CALL(F_LTRIM)		; ignore leading spaces
 	RETURN			; otherwise return the result in P2
 
 ; This routine will return DF=1 if (P3 .LE. P4) and DF=0 if it is not...
-P3LEP4: GHI	P3		; First compare the high bytes
-	STR	SP		; ....
-	GHI	P4		; ....
-	SM			; See if P4-P3 < 0 (which implies that P3 > P4)
-	LBL	P3GTP4		; because it is an error if so
-	LBNZ	P3LE0		; Return if the high bytes are not the same
-	GLO	P3		; The high bytes are the same, so we must
-	STR	SP		; repeat the test for the low bytes
-	GLO	P4		; ....
-	SM			; ....
-	LBL	P3GTP4		; ....
-P3LE0:	SDF			; return DF=1
-	RETURN			; Everything is in the right order...
-P3GTP4:	CDF			; return DF=0
-	RETURN			; ...
+P3LEP4: GHI P3\ STR SP		; first compare the high bytes
+	GHI P4\	SM		; see if P4-P3 < 0 (which implies that P3 > P4)
+	LBL	P3LE0		;  ... return DF=0 if so
+	LBNZ	P3LE0		;  ... return DF=1 if P4-P3 > 0
+	GLO P3\ STR SP		; high bytes are the same, so we must
+	GLO P4\ SM		;  ... repeat the test for the low bytes
+P3LE0:	RETURN			; return DF
 
-	.SBTTL	"Output Decimal and Hexadecimal Numbers"
+; This routine will compute P4-P3+1 and return the result in P3 ...
+P4SBP3:	GLO P3\ STR  SP		; subtract the low bytes first
+	GLO P4\ SM\  PLO P3	; ...
+	GHI P3\ STR  SP		; and then the high bytes
+	GHI P4\ SMB\ PHI P3	; ...
+	INC P3\ RETURN		; +1 and we're done
+
+	.SBTTL	Output Decimal and Hexadecimal Numbers
 
 ;   This routine will convert a four bit value in D (0..15) to a single hex
 ; digit and then type it on the console...
@@ -4383,7 +4560,7 @@ TDEC1A:	CALL(TDECP1)		; keep typing P1 recursively
 TDEC1B:	POPD			; then get back the remainder
 	LBR	THEX1		; type it in ASCII and return
 
-	.SBTTL	"Type Version Number"
+	.SBTTL	Type Version Number
 
 ;   Type a version number as used by the firmware and the BIOS, in the format
 ; "MM(eeee)", where MM is the major version and eeee is the edit number.  All
@@ -4408,7 +4585,7 @@ TVERSN:	LDA	P3		; get the major version
 	LDI	')'		; ...
 	LBR	F_TTY		; and we're done
 
-	.SBTTL	"Type Various Special Characters"
+	.SBTTL	Type Various Special Characters
 
 ; This routine will type a carriage return/line feed pair on the console...
 TCRLF:	LDI	CH.CRT		; type carriage return
@@ -4428,7 +4605,7 @@ TTABC:	LDI	CH.TAB		; ...
 TQUEST:	LDI	'?'		; ...
 	LBR	F_TTY		; ...
 
-	.SBTTL	"32 bit Unsigned Decimal Input and Output"
+	.SBTTL	32 bit Unsigned Decimal Input and Output
 
 ;++
 ;   This routine will scan an unsigned decimal number from the command line
@@ -4506,7 +4683,7 @@ TDEC322:POPD\ CALL(THEX1)	; recover a digit and type it
 	POPR(P2)\ POPRL(P1)	; and restore (P2,P1)
 	RETURN			; and we're finally done!
 
-	.SBTTL	"Thirty Two Bit Quad Precision Multiply and Divide"
+	.SBTTL	Thirty Two Bit Quad Precision Multiply and Divide
 
 ;   This routine performs a 32 bit by 32 bit multiply of the values in register
 ; pair (T2,T1) by the register pair (P4,P3) to give a 32 bit result in (T2,T1).
@@ -4554,7 +4731,410 @@ DIV321:	QADD(P2,P1,P4,P3)	; divisor didn't fit - restore remainder
 	LBR	DIV320		; and keep dividing
 DIV322:	RETURN			; here when we're done
 
-	.SBTTL	"The End"
+	.SBTTL	XMODEM Protocol
+
+;++
+;   These routines will transmit an arbitrary block of RAM, using the XMODEM
+; protocol up to the host over the console serial port.  And they'll also
+; download an arbitrary block of RAM from the host using XMODEM in a similar
+; way.  The basic plan for uploading RAM is -
+;
+;   1) Call XOPENW, which will wait for the host to send us a NAK, indicating
+;   that it is ready to receive data.
+;
+;   2) Call XWRITE to transmit a block of RAM.  Note that XMODEM data blocks
+;   are always 128 bytes, however you can call XWRITE with any arbitrary sized
+;   chunk of RAM and XWRITE will handle reblocking it.  Also note that you may
+;   call XWRITE more than once, for contiguous or discontiguous blocks of RAM,
+;   however remember that the addresses and byte counts are NOT transmitted.
+;   Only the raw data is saved, so if you want to later download the same file
+;   you are responsible for getting everything back in the right spot.
+;
+;   3) When you're done, call XCLOSEW.  This will transmit any partial XMODEM
+;   block remaining and then send an EOT to the host, telling it that we're
+;   done.  Note that XMODEM blocks are always 128 bytes, and by tradition any
+;   partial block at the end is padded with SUB ($1A, Control-Z) characters.
+;
+; Downloading a file to RAM goes basically the same way -
+;
+;   1) Call XOPENR. This will send a NAK to the host, after a short delay,
+;   and it should start sending us data.
+;
+;   2) Call XREAD one or more times to read data from the host.  Once again
+;   you can read any arbitrary number of bytes with XREAD, and it will handle
+;   reblocking into 180 byte chunks but remember that you're responsible for
+;   getting everything back in the right RAM locations.
+;
+;   3) Call XCLOSER to wait for the host to send EOT, indicating the end of
+;   file.  Note that any additional data the host may send while XCLOSER is
+;   waiting for EOT will be ignored.
+;
+;   The SBC1802 versions of XREAD and XWRITE use the ERAM and DRAM routines to
+; access RAM, so they can access either RAM0 or RAM1 even though this EPROM
+; code is mapped into memory.
+;
+;   The XMODEM code uses 132 bytes of RAM, shared with DSKBUF, for a temporary
+; buffer.  THIS PART OF RAM CANNOT BE UPLOADED OR DOWNLOADED!  Normally the
+; XMODEM buffer is shared with the DSKBUF, and is from $0000 to $01FF.
+;
+; ATTRIBUTION
+;   Most of this code has been adapted from the original XMODEM written for the
+; Elf2K and PicoElf EPROMs by Mike Riley.  That code was copyright 2020 by
+; Michael H Riley.  You have permission to use, modify, copy, and distribute
+; this software so long as this copyright notice is retained.  This software
+; may not be used in commercial applications without express written permission
+; from the author.
+;--
+
+	.SBTTL	Upload Data to the Host Using XMODEM
+
+;++
+;   This routine will open the XMODEM channel for sending data up to the host
+; machine.  After initializing a few variables, it waits for the host to send
+; us a NAK indicating that it's ready to receive.   Any characters other than
+; NAK are ignored.  
+;
+;   There is a timeout of approximately 10 seconds on waiting for the host to
+; send that NAK.  If we time out without receiving it, we return with DF=1.
+;
+;   Echo on the console is automatically disabled while XMODEM is active.
+;--
+XOPENW:	PUSHR(P1)		; save working register
+	RLDI(P1,XBLOCK)		; current block number
+	LDI 1\ STR P1		; set starting block to 1
+	INC P1\ LDI 0\ STR P1	; set byte count to zero
+	GHI BAUD\ ANI $FE 	; turn off echo
+	PHI	BAUD		; ...
+	RLDI(P1,5000)		; 5000 times 2ms delay -> 10 second timeout
+XOPNW1:	CALL(F_NBREAD)		; read a byte from the serial port w/o waiting
+	LBNF	XOPNW2		; branch if nothing was read
+	SMI	CH.NAK		; did we get a NAK?
+	LBZ	XOPNW3		;  ... yes - success!
+XOPNW2:	DLY2MS			; delay for 2ms, more or less
+	DBNZ(P1,XOPNW1)		; and count down the 10s timeout
+	SDF\ LSKP		; return DF=1 for timeout
+XOPNW3:	CDF			; return DF=0 for success
+	IRX\ POPRL(P1)		; restore P1
+	RETURN			; and we're done
+
+
+;++
+;   This routine will transmit a block of RAM to the host via XMODEM.  P3
+; should contain a pointer to the start of the data, and P2 should contain
+; a count of the bytes to send.  XMODEM naturally sends data in 128 byte
+; byte blocks and this routine will automatically handle reblocking the
+; original data, regardless of its actual length.  
+;
+;   If the data length is not a multiple of 128, meaning that the last XMODEM
+; record is partially filled, then data data remains in the XBUFFER.  If this
+; routine is called a second time then that additional data is simply appended
+; to what's already in the XBUFFER.  If not, then you must call XCLOSEW to
+; pad out and transmit the final record.
+;
+;   Note that at the moment there isn't any error detection or correction
+; here.  About the only thing that could go wrong is that we time out waiting
+; for the host to respond, or that we get in an infinite retransmit loop.
+;
+;CALL:
+;	P2 -> count of bytes to send
+;	P3 -> address of the first byte
+;	CALL(XWRITE)
+;
+; Note that ERAM uses T1 and doesn't save it, so we do that here...
+;--
+XWRITE:	PUSHR(T1)\ PUSHR(T2)	; save working registers
+	PUSHR(T3)		; ...
+	RLDI(T3,XCOUNT)\ LDN T3	; get byte count
+	STR SP\ PLO T2		; store for add
+	LDI LOW(XBUFFER)\ ADD	; index into XBUFFER
+	PLO	T3		;  ...
+	LDI HIGH(XBUFFER)\ ADCI	0; ...
+	PHI	T3		;  ...
+XWRIT1:	CALL(ERAM)\ INC P3	; read a byte from RAM (was LDA P3)
+	STR T3\ INC T3		; copy byte from caller to XBUFFER
+	INC T2\ GLO T2		; count bytes in XBUFFER
+	ANI $80\ LBZ XWRIT2	; keep going if it's not 128 yet
+	CALL(XSEND)		; send current buffer
+	LDI 0\ PLO T2		; zero buffer byte count
+	RLDI(T3,XBUFFER)	; and start at the beginning of XBUFFER
+XWRIT2:	DBNZ(P2,XWRIT1)		; decrement caller's count until it's zero
+	RLDI(T3,XCOUNT)		; update XCOUNT with the
+	GLO T2\ STR T3		;  ... remaining partial buffer count
+	IRX\ POPR(T3)		; restore registers
+	POPR(T2)\ POPRL(T1)	; ...
+	RETURN			; and we're done here
+
+
+;++
+;   This routine is used by XWRITE to send one data block to the host.  It
+; fills in the block number and checksum, transmits all 132 bytes, and then
+; wait for the ACK or NAK to come back.  If the host NAKs us, then we'll
+; send the same record over again.
+;--
+XSEND:	PUSHR(P1)\ PUSHR(P2)	; save some temporary registers
+XSEND0:	LDI CH.SOH\ PHI P2	; send SOH and init checksum in P2.1
+	CALL(F_TTY)		; ...
+	RLDI(P1,XBLOCK)		; get current block number
+	LDN P1\ STR SP		;  ... on the stack
+	GHI P2\ ADD\ PHI P2	; add block number to checksum
+	LDN SP\ CALL(F_TTY)	; transmit block number
+	LDN P1\ SDI 255\ STR SP	; next we send 255 - block nujmber
+	GHI P2\ ADD\ PHI P2	; add that to the checksum
+	LDN SP\ CALL(F_TTY)	; and transmit it
+	LDI 128\ PLO P2		; P2.0 counts number of bytes to send
+	RLDI(P1,XBUFFER)	; and P1 points at the data block
+XSEND1:	LDA P1\ STR SP		; get next byte to send
+	GHI P2\ ADD\ PHI P2	; add it to the checksum
+	LDN SP\ CALL(F_TTY)	; then transmit it
+	DEC P2\ GLO P2		; decrement byte count
+	LBNZ	XSEND1		; keep going until we've sent all 128
+	GHI P2\ CALL(F_TTY)	; transmit the checksum byte next
+XSEND2:	CALL(F_READ)\ STR SP	; read the response from the host
+	SMI CH.NAK\ LBZ XSEND0	; resend the block if it was a NAK
+	RLDI(P1,XBLOCK)\ LDN P1	; otherwise increment the block number
+	ADI 1\ STR P1		; ...
+	INC P1\ LDI 0\ STR P1	; and zero the buffer byte count
+	IRX\ POPR(P2)\ POPRL(P1); restore P1 and P2
+	RETURN			; all done
+
+
+;++
+;   This routine will "close" the XMODEM channel.  If there's any partial data
+; remaining in the XBUFFER then we'll pad that out with SUB characters to fill
+; the full 128 bytes, and transmit it.  After the last block has been sent we
+; transmit an EOT, telling the host that we're done, and then wait for an ACK
+; to come back.  After that, console echo is re-enabled and we return.
+;
+;   Note that there's no timeout on waiting for the final ACK from the host.
+; There probably should be!
+;--
+XCLOSEW:PUSHR(P1)\ PUSHR(P2)	; save working registers
+	RLDI(P1,XCOUNT)\ LDN P1	; get count remaining in last block
+	LBZ	XCLSW2		; if it's zero then we're done
+	PLO P2\ STR SP		; ...
+	LDI LOW(XBUFFER)\ ADD	; index into XBUFFER again
+	PLO P1			; ...
+	LDI HIGH(XBUFFER)	; ...
+	ADCI 0\ PHI P1		; ...
+XCLSW1:	LDI CH.SUB\  STR P1	; fill the rest of the buffer with ^Z
+	INC P1\ INC P2		; increment pointer and count
+	GLO P2\ ANI $80		; have we done 128 bytes?
+	LBZ	XCLSW1		; loop until we have
+	CALL(XSEND)		; and then transmit the final block
+XCLSW2:	LDI CH.EOT\ CALL(F_TTY)	; transmit EOT next
+	CALL(F_READ)		; and read the host's response
+	SMI	CH.ACK		; did he send an ACK?
+	LBNZ	XCLSW2		; keep resending EOT until we get one
+	GHI BAUD\ ORI $01	; turn echo back on
+	PHI	BAUD		; ...
+	IRX\ POPR(P2)\ POPRL(P1); restore P1 and P2
+	RETURN			; and return
+
+	.SBTTL	Download Data from the Host Using XMODEM
+
+;++
+;   This routine will open the XMODEM channel for receiving data from the host
+; machine.  After initializing all XMODEM related variables, it will delay for
+; approximately 10 seconds.  This delay is to give the operator a chance to
+; start up the XMODEM transmitter on his end.  When sending, the host will
+; wait for us to make the first move by sending a NAK upstream, and after that
+; the host will respond by sending the first data block.
+;--
+XOPENR:	PUSHR(P1)		; save consumed registers
+	GHI BAUD\ ANI $FE 	; turn off echo
+	PHI	BAUD		; ...
+	RLDI(P1,XINIT)		; ...
+	LDI CH.NAK\ STR P1	; initially we send a NAK
+	INC P1\ LDI   1\ STR P1	; set initial block number to 1
+	INC P1\ LDI 128\ STR P1	; set initial count as 128 empty bytes
+	INC P1\ LDI   0\ STR P1	; set XDONE = 0
+	RLDI(P1,5000)		; 5000 * 2ms -> 10 second delay
+XOPNR1:	DLY2MS			; delay for 2 milliseconds
+	DBNZ(P1,XOPNR1)		; do that 5000 times
+	IRX\ POPRL(P1)		; restore P1
+	RETURN			; and return
+
+
+;++
+;   This routine will receive a block of RAM transmitted from the host using
+; XMODEM.  P3 should contain a pointer to the start of the RAM block, and P2
+; contains a count of the bytes to be written.  XMODEM sends data in 128 byte
+; blocks, and this routine will pack up multiple blocks to fill the caller's
+; buffer as necessary.  If the size passed in P2 is not a multiple of 128 then
+; the last partial block will be left in the XBUFFER.  It can be discarded,
+; or it will be used if this routine is called a second time.
+;
+;   If the host has less data than we want to read - i.e. if it sends an EOT
+; before our count is exhausted, then we return with DF=1 and the remainder
+; of the buffer will be left unchanged.
+;
+;CALL:
+;	P2 -> count of bytes to receive
+;	P3 -> address of the first byte
+;	CALL(XREAD)
+;
+; Note that DRAM uses T1 and doesn't save it, so we do that here...
+;--
+XREAD:	PUSHR(T1)\ PUSHR(T2)	; save temporary registers
+	PUSHR(T3)		; ...
+	RLDI(T2,XCOUNT)\ LDN T2	; get current buffer byte count
+	PLO T3\ STR SP		; ...
+	LDI LOW(XBUFFER)\ ADD	; index into the buffer
+	PLO	T2		; ...
+	LDI	HIGH(XBUFFER)	; ...
+	ADCI 0\ PHI T2		; ...
+XREAD0:	GLO T3\ ANI $80		; have we read 128 bytes?
+	LBZ	XREAD1		; jump if yes
+	CALL(XRECV)		; otherwise receive another block
+	LBDF	XREAD2		; quit if EOT received
+	LDI 0\ PLO T3		; and reset the buffer to empty
+	RLDI(T2,XBUFFER)	; ...
+XREAD1:	LDA T2\ CALL(DRAM)	; copy byte from XBUFFER to caller (was STR P3)
+	INC P3\ INC T3		; increment pointer and count
+	DBNZ(P2,XREAD0)		; keep going until caller's count is zero
+	RLDI(T2,XCOUNT)		; update count of bytes remaining in buffer
+	GLO T3\ STR T2		; ...
+	CDF			; return DF=0 for success
+XREAD2:	IRX\ POPR(T3)		; restore registers
+	POPR(T2)\ POPRL(T1)	; ...
+	RETURN			; and we're done here
+
+
+;++
+;   THis routine is used by XREAD to receive one block, verify the block
+; number and checksum, and handle the handshake with the host.  If either the
+; block or checksum is wrong, the we'll send a NAK back to the host and wait
+; for this block to be retransmitted.
+;
+;   If we receive an EOT, signifying the end of transmission, from the host
+; instead of another data block, then we return DF=1.
+;--
+XRECV:	PUSHR(P1)\ PUSHR(P2)	; save some working room
+XRECV0:	CALL(XRDBLK)		; read 128 bytes (more or less)
+	LBDF	XRECV3		; jump if EOT received
+	RLDI(P1,XHDR2)		; get block number received
+	LDN P1\ STR SP		;  ... and store for comparison
+	RLDI(P1,XBLOCK)\ LDN P1	; get the block number we expect
+	SM\ LBNZ XRECV2		; jump if they aren't the same
+	RLDI(P1,XBUFFER)	; point to first data byte
+	LDI   0\ PHI P2		; accumulate checksum in P2.1
+	LDI 128\ PLO P2		; and count bytes in P2.0
+XRECV1:	LDA P1\ STR SP		; add byte from buffer to checksum
+	GHI P2\ ADD\ PHI P2	; ...
+	DEC P2\ GLO P2		; have we done 128 bytes?
+	LBNZ	XRECV1		;  ... keep going until we have
+	LDN P1\ STR SP		; get checksum we received
+	GHI P2\ SM		; does it match what we computed?
+	LBNZ	XRECV2		; request a retransmit if not
+	RLDI(P1,XINIT)		; send an ACK for this block
+	LDI CH.ACK\ STR P1	; ...
+	INC P1\ LDN P1		; increment the block number
+	ADI 1\ STR P1		; ...
+	INC P1\ LDI 0\ STR P1	; and zero the byte count
+	CDF			; return DF=0 for success
+XRECV9:	IRX\ POPR(P2)\ POPRL(P1); restore P1 and P2
+	RETURN			; and return
+
+; Here if there was some error and we need a re-transmit of the last block ...
+XRECV2:	RLDI(P1,XINIT)		; send a NAK
+	LDI CH.NAK\ STR P1	; ...
+	LBR	XRECV0		; and go try again
+
+; Here if the host sends an EOT (end of transmission!) ...
+XRECV3:	RLDI(P1,XDONE)		; set the XDONE flag
+	LDI $FF\ STR P1		; ...
+	LBR	XRECV9		; and return DF=1 for EOT
+
+
+;++
+;   This routine will "close" the XMODEM download channel.  If we haven't
+; already received an EOT from the host, then we'll contine reading (and just
+; discarding) data blocks until the host does send us an EOT.  After that
+; we turn the console echo back on and we're done.
+;--
+XCLOSER:PUSHR(P1)		; save a temporary register
+	RLDI(P1,XDONE)\ LDN P1	; have we already received an EOT?
+	LBNZ	XCLSR2		; yes - don't look for another!
+XCLSR1:	CALL(XRDBLK)		; look for EOT but the host may send more data
+	LBNF	XCLSR1		; just ignore any extra data until EOT
+XCLSR2:	GHI BAUD\ ORI $01	; turn echo back on
+	PHI	BAUD		; ...
+	IRX\ POPRL(P1)		; restore P1
+	RETURN			; and we're done
+
+
+;++
+;   This routine will read 132 bytes from the host and store them in the XMODEM
+; buffer.  This includes the SOH, the block number (two bytes), 128 bytes of
+; data, and the checksum.  It doesn't verify any of this; it simply stuffs it
+; into the buffer for later review.
+;
+;   Note that this is the only code that needs to be fast in order to keep up
+; with the host and not drop bytes.  Everything else has built in delays while
+; waiting for an ACK, NAK or something else, but here the host is sending those
+; 132 bytes as fast as it can.  
+;
+;   One last thing - it's possible that we'll receive an EOT instead of an SOH.
+; This indicates that the host is done sending data.  If that happens we'll
+; automatically ACK the EOT immediately and then return with DF=1.
+;--
+XRDBLK:	PUSHR(P1)		; save several working registers
+	PUSHR(T1)\ PUSHR(T3)	; ...
+	LDI 132\ PLO T1		; expect to receive 132 bytes
+	LDI 1\ PHI T1		; and remember this is the first byte
+	RLDI(P1,XINIT)\ LDN P1	; get our response (either ACK or NAK)
+	PHI T3			;  ... save it temporarily
+	RLDI(P1,XHDR1)		; point to input buffer
+	GHI T3\ CALL(F_TTY)	; and transmit our ACK/NAK
+XRDBK1:	CALL(F_READ)		; read next byte from host
+	STR P1\ INC P1		; store it in the buffer
+	GHI T1\ SHR\ PHI T1	; get the first time thru flag
+	LBNF	XRDBK2		; jump if not first character
+	GLO	BAUD		; first character - get it back
+	SMI	CH.EOT		; was it an EOT?
+	LBNZ	XRDBK2		; jump if not
+	LDI CH.ACK\ CALL(F_TTY)	; send an ACK for the EOT
+	SDF\ LBR XRDBK3		; return DF=1 and we're done
+XRDBK2:	DEC T1\ GLO T1		; decrement received byte count
+	LBNZ	XRDBK1		; and keep going until we've done 132
+	CDF			; return DF=0 and we're done
+XRDBK3:	IRX\ POPR(T3)		; restore all those registers
+	POPR(T1)\ POPRL(P1)	; ...
+	RETURN			; and we're done
+
+	.SBTTL	Vector Table
+
+;++
+;   There is a table of entry vectors for this code (as opposed to all the BIOS
+; and UT71 entry vectors) at the very end of the monitor space, and just before
+; the BIOS starts at $F000.  This table is primarily for BASIC3 to access our
+; XMODEM functions, but it could be used for something else too.
+;
+;   In any case, it goes without saying that you can't change anything about
+; this table, including it's location in EPROM, WITHOUT CHANGING BASIC3 TOO!
+;--
+
+	.ORG	XVECTORS	; vector table start
+; These are the only three vectors actually used by BASIC ...
+	LBR	BEXIT		; exit from BASIC and return here
+	LBR	BSAVE		; save a BASIC program/data
+	LBR	BLOAD		; load a BASIC program/data
+;   Note that the direct XMODEM vectors, XOPENW/XWRITE/XCLOSEW and also
+; XOPENR/XREAD/XCLOSER, aren't actually used by BASIC.  Instead BASIC just
+; calls BSAVE or BLOAD and then lets us worry about the details.  These
+; vectors could be removed if we need the space for something else, but for
+; now we'll leave them alone.
+	LBR	XOPENW		; open XMODEM channel for writing
+	LBR	XWRITE		; upload data via XMODEM
+	LBR	XCLOSEW		; close XMODEM upload channel
+	LBR	XOPENR		; open XMODEM channel for reading
+	LBR	XREAD		; download data via XMODEM
+	LBR	XCLOSER		; close XMODEM download channel
+	LBR	MAIN		; spare
+	.WORD	-10		; the number of vectors above
+
+#if ($ != $F000)
+	.ECHO	"**** WRONG NUMBER OF XVECTORS! *****\n"
+#endif
 
 	.END
-

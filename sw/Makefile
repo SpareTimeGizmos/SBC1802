@@ -29,12 +29,14 @@
 # REVISION HISTORY:
 # dd-mmm-yy	who     description
 # 17-Jan-24	RLA	New file.
+# 17-May-24	RLA	Add BASIC3.
 #--
 
 # Tool paths and options - you can change these as necessary...
 TASM=D:/bob/bin/tasm/tasm
 export TASMTABS=D:/bob/bin/tasm/
 TASMOPTS=-t1802 -lat -g0 -i -p44 -DTASM -DSBC1802
+A18=d:/bob/bin/a18
 ROMMERGE=D:/bob/bin/rommerge.exe
 ROMCKSUM=D:/bob/bin/romcksum.exe
 ROMTEXT=D:/bob/bin/romtext.exe
@@ -44,7 +46,7 @@ ECHO=C:/cygwin64/bin/echo.exe
 DATE=C:/cygwin64/bin/date.exe
 
 # All components of the EPROM image ...
-HEXFILES = sbc1802.hex bios1802.hex ut1802.hex help.hex
+HEXFILES = sbc1802.hex bios1802.hex ut1802.hex basic3.hex help.hex
 LISTFILES = $(HEXFILES:.hex=.lst)
 
 # The default target builds everything...
@@ -64,6 +66,10 @@ bios1802.hex:	bios1802.asm bios.inc rtl1802.asm
 ut1802.hex:	ut1802.asm sbc1802.inc bios.inc ut71.inc
 	@$(ECHO) -e "\n*** BUILDING SBC1802 UT71 ***"
 	@$(TASM) $(TASMOPTS) $< $@
+
+basic3.hex:	basic3.asm
+	@$(ECHO) -e "\n*** BUILDING BASIC3 ***"
+	$(A18) $< -l $(<:.asm=.lst) -o $@
 
 help.hex:	sbc1802.hlp
 	@$(ECHO) -e "\n*** COMPILING HELP TEXT ***"

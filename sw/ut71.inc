@@ -25,6 +25,11 @@
 ; any other magic numbers for RCA's UT71 ROM.  The SBC1802 firmware emulates
 ; many of the standard UT71 entries and functions for MicroDOS compatability.
 ;
+;   For compatibility with BASIC3 and the RCA MCDS ("Microboard COSMAC
+; Development System") UT62 ROM, several UT62 entry points are defined as well.
+; Most of the UT62 entries are identical to UT71, and there are only a few
+; extras needed.
+;
 ;   Note that a few of these names have been changed slightly from the RCA 
 ; documentation by prepending "UT" or "U".  This is to avoid conflicts with
 ; other names used on the SBC1802.
@@ -39,6 +44,8 @@
 ; REVISION HISTORY
 ;
 ; 001	-- Start from scratch!
+;
+; 002	-- Add some UT62 entry points for BASIC3 ...
 ;
 ;--
 
@@ -83,6 +90,13 @@ UTCALL	 .EQU	$8364	; SCRT CALL routine
 UTRET	 .EQU	$8374	; SCRT RETURN routine
 UTLINEPR .EQU	$850E	; send RF.1 to line printer port
 
+; UT62 entry points (which aren't also UT71 entries!) ...
+UTTYPED	 .EQU	$8198	; delay, then call TYPE
+UTTYPE5D .EQU	$819C	; delay, then call TYPE5
+UTTIMALC .EQU	$80FE	; autobaud
+UTMOVE	 .EQU	$8429	; move memory
+UTFILL	 .EQU	$824B	; fill memory
+
 ; UT71 floppy disk I/O entry points ...
 UTBOOT	  .EQU	$8400	; SBC1802 specific - bootstrap MicroDOS
 UTCFRETS  .EQU	$87D8	; command file return point
@@ -108,3 +122,8 @@ FD.DER	 .EQU	$20	; drive failure
 FD.WPT	 .EQU	$10	; write protect error
 FD.CRC	 .EQU	$08	; CRC error
 FD.ABE	 .EQU	$02	; FDC command abnormal termination
+
+; UT62 Cassette tape I/O entry points ...
+UTREADT	 .EQU	$8502	; read tape
+UTWRITET .EQU	$8500	; write tape
+UTREWT   .EQU	$8504	; rewind tape

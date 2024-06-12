@@ -79,9 +79,12 @@
 ;
 ; 003	-- Fix error in LBA calculation for SEEKST ...
 ;
+; 004	-- Add some UT62 entry points, especially those for cassette tape I/O.
+;	   None of these do anything except cause errors!
+;
 ; --
 VERMAJ	.EQU	1	; major version number
-VEREDT	.EQU	2	; and the edit level
+VEREDT	.EQU	4	; and the edit level
 
 	.SBTTL	"Implementation Notes"
 
@@ -226,7 +229,7 @@ VEREDT	.EQU	2	; and the edit level
 #defcont		\	.echo "VECTOR ERROR FOR vec\n"
 #defcont		\#endif
 
-	.SBTTL	"Delay Routine"
+	.SBTTL	"Delay and Autobaud Routines"
 
 ;++
 ;   UT71 contains a DELAY routine that generates (what else?) programmed delays.
@@ -240,7 +243,13 @@ VEREDT	.EQU	2	; and the edit level
 ; calls it whenever a line feed is output to the terminal.  It's doing this
 ; to add filler time for slow printers, like an ASR-33, and we couldn't care
 ; less, but since MicroDOS calls it we have to have it.
+;
+;   UT62 implements a routine called TIMALC which does the automatic baud rate
+; detection for the bit banged console port on the RCA MCDS.  We don't need
+; this either, and it's implementd here as a no-op.
 ;--
+
+; DELAY routine ...
 	.ORG	$UTDELAY-1
 DLYXIT:	SEP	PC		; called via SEP RD, return via SEP R3
 	UENTRY(UTDELAY)
@@ -248,6 +257,12 @@ DLY:	LDA	PC		; fetch the delay constant
 DLY2:	SMI	1		; count it down
 	BZ	DLYXIT		; and loop until it's zero
 	BR	DLY2		; then return
+
+
+; TIMALC routine ...
+	.ORG	$UTBASE+$00FE	; autobaud serial port
+	UENTRY(UTTIMALC)	; ...
+	RETURN			; just do nothing 
 
 	.SBTTL	"Console Input Functions"
 
@@ -344,10 +359,11 @@ FND:	ANI $0F\ STXD		; SAVE TEMPORARILY
 ; line up with.
 ;--
 	.ORG	UTBASE+$0198
-
+	UENTRY(UTTYPED)
 TYPED:	BR	TYPE
 
 	.ORG	UTBASE+$019C
+	UENTRY(UTTYPE5D)
 TYPE5D:	BR	TYPE5
 
 	.ORG	UTBASE+$019F
@@ -691,24 +707,40 @@ RECAL:	GLO R0\ ANI $08		; make sure the unit is 0..7
 	OUTI(GROUP, BASEGRP)	; restore the I/O group
 	RETURN			; and we're done!
 
-	.SBTTL	"Line Printer Output"
+	.SBTTL	"UT62 Cassette Tape and Line Printer Entries"
 
 ;++
-;   This doesn't really belong here, with the diskette code, but the UT71
-; ROM wants the entry point for the line printer driver at $850E, and here
-; we are.  Fortunately we have plenty of room, so we can allocate a whole
-; page to the printer driver if we want.
+;   For compatibility with the UT62 ROM (used on the RCA Microboard COSMAC
+; Development System, aka MCDS) we define three entry points that UT62 used
+; to read/write cassette tapes (yes, audio cassettes!).  Right now these do
+; nothing, but someday that might change.
 ;
-;   The MS2000 had a parallel printer interface and in the original UT71 code
+;   And UT71 defines an entry point for output to a line printer here too.
+; The MS2000 had a parallel printer interface and in the original UT71 code
 ; this routine would output one ASCII character from RF.1 to the printer.
 ; The SBC1802 has a Centronics printer port (of sorts) if the expansion card
 ; is installed and this could conceivably do the same, but we haven't bothered
 ; to implement it yet.
 ;
-;   Right now, printing is just a NOP that does nothing...
+;   FWIWI, none of this really belongs here, with the diskette code, but the
+; UT71 and UT62 ROMs want the entry points here.  Fortunately we have plenty
+; of room...
 ;--
-	.ORG	UTBASE+$050E
 
+; WARNING - the entry vectors for READT and WRITET are just two bytes!
+	.ORG	UTBASE+$0500		; write data to cassettee tape
+	UENTRY(UTWRITET)		; ...
+	BR	UT62ER			; ...
+	.ORG	UTBASE+$0502		; read data from cassette tape
+	UENTRY(UTREADT)			; ...
+	BR	UT62ER			; ...
+	.ORG	UTBASE+$0504		; rewind cassette tape
+	UENTRY(UTREWT)			; ...
+UT62ER:	LBR	RENTER			; just abort for all of them now
+
+
+; Line printer output ...
+	.ORG	UTBASE+$050E		; write character to line printer
 	UENTRY(UTLINEPR)
 	RETURN				; TBA!!  someday...
 
