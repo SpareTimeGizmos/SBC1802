@@ -119,8 +119,8 @@ F_CALL   EQU	0FFC6H		;[RLA] SBC1802 standard SCRT CALL routine
 F_RETURN EQU	0FFD8H		;[RLA] SBC1802 standard SCRT RETURN routine
 XENTRY	 EQU	0EFE0H		;[RLA] base of SBC1802 vector table
 BEXIT	 EQU	XENTRY+(3*0)	;[RLA] exit from BASIC
-BSAVE	 EQU	XENTRY+(3*1)	;[RLA] exit from BASIC
-BLOAD	 EQU	XENTRY+(3*2)	;[RLA] exit from BASIC
+BSAVE	 EQU	XENTRY+(3*1)	;[RLA] save BASIC program w/XMODEM
+BLOAD	 EQU	XENTRY+(3*2)	;[RLA] load BASIC program w/XMODEM
 
 
 ;START OF BASIC

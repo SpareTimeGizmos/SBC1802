@@ -1,0 +1,134 @@
+/*++									*/
+/* exp.pld - Spare Time Gizmos SBC1802 expansion board GAL		*/
+/*									*/
+/*   Copyright (C) 2021 by Robert Armstrong, Milpitas, California.	*/
+/*									*/
+/*  This program is free software; you can redistribute it and/or	*/
+/* modify it under the terms of the GNU General Public License as	*/
+/* published by the Free Software Foundation; either version 2 of the	*/
+/* License, or (at your option) any later version.			*/
+/*									*/
+/*  This program is distributed in the hope that it will be useful, but	*/
+/* WITHOUT ANY WARRANTY; without even the implied warranty of		*/
+/* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU	*/
+/* General Public License for more details.				*/
+/*									*/
+/*   You should have received a copy of the GNU General Public License	*/
+/* along with this program; if not, write to the Free Software		*/
+/* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111 USA.	*/
+/*                                                                      */
+/* DESCRIPTION								*/
+/*   This is the programming for the sole PLD on the SBC1802 expansion	*/
+/* board.  This PLD decodes the group select for all the I/O groups on	*/
+/* this board AND also the base board group 0/1.  It also decodes chip	*/
+/* select and read/write enables for the AY-3-8912 sound generator and	*/
+/* for the group select register itself.  And lastly, it drives the	*/
+/* direction of the bus buffer, which deterimines which direction data	*/
+/* flows between the base and expansion boards				*/
+/*									*/
+/* REVISION HISTORY							*/
+/* 23-FEB-24	RLA	New file.					*/
+/* 25-FEB-24	RLA	Add PSG decoding and finish up.			*/
+/* 26-FEB-24	RLA	Can't use port 1 for PSG_ADDR!!!		*/
+/*  1-AUG-24	RLA	Changes for revision B of the expansion board	*/
+/*  8-AUG-24	RLA	Add I/O ports for second PSG!			*/
+/*--									*/
+NAME		EXP;
+PARTNO		EXP;
+REVISION	F;
+DATE		08/08/24;
+DESIGNER	Robert Armstrong;
+COMPANY		Spare Time Gizmos;
+ASSEMBLY	SBC1802-EXPANSION;
+LOCATION	U7;
+DEVICE		G22V10;
+
+
+/* INPUTS... */
+/*PIN  1 =  XXX;*/		/* unused ...                		*/
+PIN  2 =  TPA;			/* CDP1802 timing pulse A              	*/
+PIN  3 =  TPB;			/* CDP1802 timing pulse B     	    	*/
+PIN  4 = !MRD;			/*  "   "  memory read strobe		*/
+PIN  5 = !MWR;			/*  "   "   "  "  write  "		*/
+PIN  6 =  N2;			/*  I/O address bit 2      		*/
+PIN  7 =  N1;			/*   "   "   "   "  1      		*/
+PIN  8 =  N0;			/*   "   "   "   "  0      		*/
+PIN  9 =  GRPSEL3;		/* I/O group select bit 3               */
+PIN 10 =  GRPSEL2;		/*  "    "     "     "  2               */
+PIN 11 =  GRPSEL1;		/*  "    "     "     "  1               */
+PIN 13 =  GRPSEL0;		/*  "    "     "     "  0               */
+
+
+/* OUTPUTS... */
+PIN 23 =  PPI_GROUP;		/* PPI group select			*/
+PIN 22 =  SLU1_GROUP;		/* SLU1 group select			*/
+PIN 21 =  TIMER_GROUP;		/* timer/counter group select          	*/
+PIN 20 =  BASE_GROUP;		/* base board group select		*/
+PIN 15 =  IO_STRETCH;		/* should be group F select 		*/
+PIN 19 =  DATA_OUT;		/* data bus buffer direction control 	*/
+PIN 18 =  PSG_BC1;		/* sound generator control bit		*/
+PIN 17 =  PSG_BDIR;		/* sound generator direction bit     	*/
+PIN 16 = !RD_IOGROUP;		/* read group selection register	*/
+PIN 14 = !WR_IOGROUP;		/* write  "    "    "    "   "		*/
+
+
+/*   IO_STRETCH is a simple SR flip flop that's set by TPA and cleared	*/
+/* by TPB.  This lets us stretch the usual CDP1802 I/O read time to	*/
+/* almost 8 clock cycles, which is nearly an eternity. Once we have IO_	*/
+/* STRETCH signal we can generate the IORD and IOWR signals.  Remember	*/
+/* that on the 1802 an I/O read is a memory write, and an I/O write is	*/
+/* a memory read.  Note that these signals are only valid when N != 0,	*/
+/* and you must include some kind of N decoding in any logic.   	*/
+IO_STRETCH = (!IO_STRETCH & TPA)  #  (IO_STRETCH & !TPB);
+IORD = ((IO_STRETCH & !TPA) # TPB) & !MRD;
+IOWR = TPB & MRD;
+
+
+/*   Decode the I/O group selects.  These are pretty simple - we just	*/
+/* just decode the IOGx inputs. But notice that group 0, the base board	*/
+/* group, is selected for either group 0 or 1!				*/
+FIELD GRPSEL = [GRPSEL3..GRPSEL0];
+BASE_GROUP  = GRPSEL:'h'0 # GRPSEL:'h'1;
+TIMER_GROUP = GRPSEL:'h'6;	/* CDP1878 dual counter/timer group	*/
+SLU1_GROUP  = GRPSEL:'h'4;	/* CDP1854 SLU1 group			*/
+PPI_GROUP   = GRPSEL:'h'5;	/* CDP1851 PPI group			*/
+PSG_GROUP   = GRPSEL:'h'7;	/* AY-3-8912 sound generator group	*/
+
+
+/*   Decode the read and write strobes for the group select register	*/
+/* This is selected for port 1 in ANY I/O group!			*/
+FIELD N = [N2..N0];
+IOGROUP = N:1;
+WR_IOGROUP = (IOWR & IOGROUP);
+RD_IOGROUP = (IORD & IOGROUP);
+
+
+/*  The 8912 interface is wierd, but then it was designed to talk to a	*/
+/* CP1600 way back when.  The truth table we use (more or less copied	*/
+/* from the AY-3-8910 data sheets) is  	     	       	       		*/
+/*									*/
+/*	STATE		BDIR BC1 BC2					*/
+/*	-------------	---- --- ---					*/
+/*	IDLE		  0   0   1					*/
+/*	READ DATA	  0   1   1					*/
+/*	WRITE DATA	  1   0   1					*/
+/*	WRITE ADDRESS	  1   1   1					*/
+/*									*/
+/*   Note that BC2 is always 1, and is just hard wired so.  Also note 	*/
+/* that there are TWO PSGs - one has the A8 enable input wired to N2	*/
+/* and responds to I/O addresses 6 and 7, and the other has A8 wired to	*/
+/* N2 inverted and responds to addresses 2 and 3.  			*/
+PSG_ADDR = (N:2 # N:6) & PSG_GROUP; /* PSG register select (write only)	*/
+PSG_DATA = (N:3 # N:7) & PSG_GROUP; /* PSG data port (read/write)	*/
+PSG_BC1  = (IORD & PSG_DATA) # (IOWR & PSG_ADDR);
+PSG_BDIR = (IOWR & PSG_DATA) # (IOWR & PSG_ADDR);
+
+
+/*   And lastly, figure out the data direction for the bus buffer. 	*/
+/* This is input (i.e data from the bus into chips on our board) except	*/
+/* for any I/O read operation directed at a group implemented on this	*/
+/* expansion board.  Then it's output!  And remember that the group	*/
+/* select register is on this board too, and it's selected for N=1	*/
+/* REGARDLESS of the I/O group.						*/ 
+MIN DATA_OUT = 4;
+DATA_OUT = (IORD & (N0#N1#N2) & GRPSEL:'b'01XX) # RD_IOGROUP;

@@ -1,5 +1,5 @@
-	.TITLE	 UT71 Emulation for Spare Time Gizmos SBC1802
-;	 Bob Armstrong [06-OCT-2021]
+	.TITLE	UT71 Emulation for Spare Time Gizmos SBC1802
+	.SBTTL	Bob Armstrong [06-OCT-2021]
 
 ; the regular OS only seems to use SEEKST, READST and WRITST ...
 ; Even DIAG uses only these.

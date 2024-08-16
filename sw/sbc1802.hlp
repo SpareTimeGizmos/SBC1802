@@ -34,93 +34,83 @@
 # 20-FEB-24	RLA	Change SHOW IDE to SHOW DISK, add SHOW TAPE
 #  1-MAR-24	RLA	Add TEST PSG, update SET [NO]RESTART
 # 10-JUN-24	RLA	Add XLOAD, XSAVE and BASIC commands
+#  3-AUG-24	RLA	Add CHECKSUM
+#  8-AUG-24	RLA	Strip down to fit in 3K of EPROM.
+#			Add EROM/DROM commands.
+# 10-AUG-24	RLA	Add FILL, SHOW VERSION, and TEST ROM.
+# 15-AUG-24	RLA	Add TEST SLU.
 #--
 MEMORY AND I/O COMMANDS
-    Examine address		-- examine one byte
+    Examine addr		-- examine one byte
     Examine start end		-- dump a range of bytes
-    Deposit address data ...	-- deposit data in memory
-    INput port [group]		-- read data from an I/O port
-    OUtput port data [group]	-- write data to an I/O port
-    XSave start end		-- upload RAM using XMODEM
-    XLoad start end		-- download RAM using XMODEM
-    :llaaaattdddd..cc		-- load an INTEL hex record
+    Deposit addr data ...	-- deposit in memory
+    INput port [group]		-- read from an I/O port
+    OUtput port data [group]	-- write to an I/O port
+    XSave start end		-- upload RAM with XMODEM
+    XLoad start end		-- download RAM with XMODEM
+    CHecksum start end		-- checksum memory
+    FIll [start end [data]]	-- fill memory
+    ERom addr			-- examine ROM
+    DRom addr data ...		-- patch EEPROM
 
 PROGRAM CONTROL COMMANDS
     BASic			-- start ROM BASIC
-    CAll [address]		-- CALL an application program w/SCRT (P=3)
-    RUn [address]		-- RUN an application program (P=0)
-    CONTinue			-- continue after a break point
+    CAll [addr]			-- CALL a program w/SCRT (P=3)
+    RUn [addr]			-- RUN a program (P=0)
+    COntinue			-- continue after break
 
 MASS STORAGE COMMANDS
-    DUmp ddd nnnnn		-- dump block nnnnn from storage device ddd
-    Boot ddd			-- Boot ELfOS from storage device ddd
-    FORMAT ddd			-- format (zero out) storage device ddd
+    DUmp ddd: nnnnn		-- dump device block
+    Boot ddd:			-- Boot ELfOS
+    FORMAT ddd:			-- zero device
 
 MICRODOS COMMANDS
-    UMap n ddd:filename		-- map virtual diskette drive n to ElfOS file
-    UMap n ddd:			-- map virtual diskette to entire storage device
-    UMap n			-- remove mapping for virtial diskette drive n
+    UMap n ddd:filename		-- map virtual diskette to ElfOS file
+    UMap n ddd:			-- map virtual diskette to entire device
+    UMap n			-- remove mapping for virtial diskette
     UMap			-- list all virtual diskette mappings
-    UBoot ddd:filename		-- map virtual diskette 0 too file and boot
-    UBoot			-- boot from already mapped virtual diskette 0
+    UBoot ddd:filename		-- map virtual diskette 0 and boot
+    UBoot			-- boot from virtual diskette 0
 
 SET COMMANDS
     SEt Q 0|1			-- set or reset Q output
     SEt RTC mm/dd/yyyy hh:mm:ss	-- set RTC date and time
-    SEt YEar yyyy		-- update the RTC year only
+    SEt YEar yyyy		-- update the RTC year
     SEt OStype ELFos|MICrodos	-- select the memory map
     SEt SLU0 bbbbb		-- set the console baud rate
     SEt SLU1 bbbbb [xYz]	-- set SLU1 baud and format
-    SEt REStart ddd		-- auto boot from device ddd on power up
-    SEt REStart xxxx		-- start program at $xxxx on power up
+    SEt REStart ddd		-- auto boot from device on power up
+    SEt REStart xxxx		-- start program on power up
     SEt NOREStart		-- power up to this monitor
 
 SHOW COMMANDS
-    SHow REGisters		-- show registers after a breakpoint
-    SHow DP			-- show monitor data page
+    SHow REGisters		-- show registers after break
+    SHow DP			-- show monitor data
     SHow RTC			-- show current date and time
-    SHow EF group		-- show status of all EF inputs
-    SHow SLU			-- show serial ports baud rate and format
+    SHow EF group		-- show all EF inputs
+    SHow SLU			-- show serial port settings
     SHow CONFiguration		-- show hardware configuration
-    SHow OStype			-- show current memory map selection
+    SHow OStype			-- show current memory map
     SHow BATTery		-- show backup battery status
     SHow DISk			-- show all IDE disk devices
     SHow TAPe			-- show all TU58 tape devices
-    SHow CPU			-- show CPU type and clock frequency
+    SHow CPU			-- show CPU type and frequency
     SHow REStart		-- show restart option
+    SHow VERsion		-- show firmware version
 
 TEST COMMANDS
-    TEst RAM0|RAM1		-- exhaustive test of system RAM chips
-    TEst PSG			-- test the AY-3-8912 sound generator
+    TEst RAM0|RAM1		-- test RAM chip
+    TEst ROM			-- test ROM chip
+    TEst PSG			-- test sound generator chip
+    TEst SLU			-- loop SLU0 and SLU1
 
 OTHER COMMANDS
     HEL[p]			-- print this text
     ; any text			-- comment command procedures
+    :llaaaattdddd..cc		-- load an INTEL hex record
     ^C				-- cancel current command line
     <BREAK>			-- interrupt execution of long commands
 
 STORAGE DEVICE NAMES
-    ID0	- IDE/ATA master disk drive
-    ID1 - IDE/ATA slave disk drive
-    TU0 - TU58 (serial disk) unit 0
-    TU1 - TU58 (serial disk) unit 1
-
-POST TESTS AND CODES
-    blank	-- CPU dead, gross hardware failure
-    POST F	-- EPROM checksum failure
-    POST E	-- MCR or memory mapping failure
-    POST D	-- RAM 1 bad
-    POST C	-- RAM 0 bad
-    POST B	-- I/O group select failure
-    POST A	-- CDP1854 SLU0 failure 
-    POST 9	-- CDP1879 RTC failure
-    POST 8	-- CDP1877 PIC failure
-    POST 7	-- CDP1854 SLU1 failure
-    POST 6	-- CDP1851 PPI failure
-    POST 5	-- CDP1878 TIMER failure
-    POST 4	-- unused
-    POST 3	-- AY-3-8912 PSG failure
-    POST 2	-- waiting for autobaud
-    POST 1	-- probing IDE drive(s)
-    POST 0	-- waiting for user input
-    decimal	-- OS booted
+    IDn	- IDE/ATA drive
+    TUn - TU58 serial disk

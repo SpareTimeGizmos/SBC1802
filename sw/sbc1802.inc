@@ -26,7 +26,9 @@
 ; 09-SEP-21	RLA	Stolen from Elf2K
 ; 15-SEP-21	RLA	Add RSHLC and RSHRC; make PUSHD/POPD SEX first
 ; 23-JUN-22	RLA 	Fix ID_MDL (it was way off!)
-; 15-FEB-24	RLA	Add Tu58 definitions
+; 15-FEB-24	RLA	Add TU58 definitions
+;  1-AUG-24	RLA	Remove MDU definitions
+;  8-AUG-24	RLA	Add definitions for PSG#2
 ;--
 
 ;0000000001111111111222222222233333333334444444444555555555566666666667777777777
@@ -187,8 +189,10 @@ DLYCONS	.EQU	155		; magic constant for 2mS at 2.5MHz
 ; test DF, those don't have these same mnemonics.  Let's fix that...
 #define LBPZ	LBDF
 #define LBGE	LBDF
+#define LSGE	LSDF
 #define LBM	LBNF
 #define LBL	LBNF
+#define LSL	LSNF
 
 ; Enable and disable interrupts (P = PC) ...
 #define INTON	SEX PC\ RET\ .BYTE (SP<<4) | PC
@@ -328,6 +332,7 @@ COLD	 .EQU	EPROM+0	; cold start entry vector
 WARM	 .EQU	EPROM+5	; warm start/breakpoint trap entry vector
 BASIC	 .EQU	$B000	; BASIC interpreter entry point
 HELP	 .EQU	$E000	; address of help text (from the ROMTEXT program)
+MUSIC	 .EQU	$EB00	; Minuet in G Major for PSG test
 XVECTORS .EQU	$EFE0	; XMODEM (and others) vector table used by BASIC
 USRRAM	 .EQU	$EFFF	; top of RAM space available to the user
 
@@ -342,12 +347,13 @@ IDEBUF	 .EQU	6	;  "   "  data buffer
 SLUBRG	 .EQU	7	; SLU0/SLU1 baud rate generator
 
 ; Standard EF flag assignments for the base board ...
-#define B_SL0SID	B1	; branch on SLU0 RXD
+#define B_SL0RXD	B4	; branch on SLU0 RXD
 #define B_RTCIRQ	B2	;  "  "  "  CDP1879 IRQ
 #define BN_RTCIRQ	BN2	;  "  "  "  no  "    "
 #define B_SL0IRQ	B3	;  "  "  "  SLU0 IRQ
 #define BN_SL0IRQ	BN3	;  "  "  "  no "  "
-#define B_INPUT		B4	; branch on INPUT/ATTENTION pressed
+#define B_INPUT		B1	; branch on INPUT/ATTENTION pressed
+#define BN_INPUT	BN1	;  "  "  " no  "    "   "      "
 
 	.SBTTL	Memory Control Register Definitions
 
@@ -445,7 +451,7 @@ POST8	.EQU	$08	;; PD.SEGA+PD.SEGB+PD.SEGC+PD.SEGD+PD.SEGE+PD.SEGF+PD.SEGG
 POST7	.EQU	$07	;; PD.SEGA+PD.SEGB+PD.SEGC
 POST6	.EQU	$06	;; PD.SEGA+PD.SEGC+PD.SEGD+PD.SEGE+PD.SEGF+PD.SEGG
 POST5	.EQU	$05	;; PD.SEGA+PD.SEGC+PD.SEGD+PD.SEGF+PD.SEGG
-POST4	.EQU	$04	;; PD.SEGB+PD.SEGC+PD.SEGF+PD.SEGG
+;POST4	.EQU	$04	;; PD.SEGB+PD.SEGC+PD.SEGF+PD.SEGG
 POST3	.EQU	$03	;; PD.SEGA+PD.SEGB+PD.SEGC+PD.SEGD+PD.SEGG
 POST2	.EQU	$02	;; PD.SEGA+PD.SEGB+PD.SEGD+PD.SEGE+PD.SEGG
 POST1	.EQU	$01	;; PD.SEGB+PD.SEGC
@@ -776,7 +782,7 @@ H1.IDE0	 .EQU	BIT0	; IDE/ATA master drive present
 ; Second byte flags at HWFLAGS+1 ...
 H0.SLU1	 .EQU	BIT7	; CDP1854 communication serial line unit present
 H0.PPI	 .EQU	BIT6	; CDP1851 programmable parallel interface present
-H0.MDU	 .EQU	BIT5	; CDP1855 multiply/divide unit present
+;		BIT5	; bit 5 unused
 H0.PSG	 .EQU	BIT4	; AY-3-8912 programmable sound generator prsent
 H0.TMR	 .EQU	BIT3	; CDP1878 programmable timer/counter present
 
@@ -790,12 +796,11 @@ H0.TMR	 .EQU	BIT3	; CDP1878 programmable timer/counter present
 ; a harmless NOP.  All base board options are in group 1.
 GROUP	 .EQU	1	; port 1 is always the I/O group selection
 BASEGRP	 .EQU	$1	; I/O group for all base board devices
-MDUGRP	 .EQU	$4	;  "    "    "  CDP1855 multiply/divide unit
-SL1GRP	 .EQU	$4	;  "    "    "  CDP1854 SLU1 (same as MDUGRP!)
+SL1GRP	 .EQU	$4	;  "    "    "  CDP1854 SLU1
 TMRGRP	 .EQU	$6	;  "    "    "  CDP1878 counter/timer
 PPIGRP	 .EQU	$5	;  "    "    "  CDP1851 parallel interface
 PSGGRP	 .EQU	$7	;  "    "    "  AY-3-8912 sound generator
-;   Note that groups 8 and up are reserved for future options and the group
+;   Note that groups 8 and up are reserved for future options and those group
 ; selection bits are available on the expansion bus connector.
 
 
@@ -803,16 +808,10 @@ PSGGRP	 .EQU	$7	;  "    "    "  AY-3-8912 sound generator
 ; on the "Base Board Definitions" page ...
 
 
-; CDP1855 MDU/SLU1 I/O Group definitions...
+; CDP1855 SLU1 I/O Group definitions...
 SL1BUF	 .EQU	2	; secondary CDP1854 UART data register
 SL1CTL	 .EQU	3	;   "   "      "     "   control
 SL1STS	 .EQU	SL1CTL	;   "   "      "     "   status
-MDUX	 .EQU	4	; multiply/divide X register
-MDUY	 .EQU	5	;   "   "   "  "  Y   "  "
-MDUZ	 .EQU	6	;   "   "   "  "  Z   "  "
-MDUCTL	 .EQU	7	;   "   "   "  "  control register (W/O)
-MDUSTS	 .EQU	7	;   "   "   "  "  status register (R/O)
-#define B_MDUOVF	B2	; branch on MDU overflow
 #define B_SL1IRQ	B3	;  "  "  "  SLU1 IRQ
 #define BN_SL1IRQ	BN3	;  "  "  "  no SLU1 IRQ
 #define B_SL1SID	B4	;  "  "  "  SLU1 RXD
@@ -844,35 +843,12 @@ PPIB	 .EQU	6	; CDP1851 port B
 
 
 ; AY-3-8912 PSG I/O group definitions ...
-PSGADDR	.EQU	2	; register address (write only)
-PSGDATA	.EQU	3	; data port (read/write)
-
-	.SBTTL	CDP1855 Multiply and Divide Unit Definitions
-
-;   The CDP1855 is an 8 bit cascadable, well, multiply and divide unit.
-; The SBC1802 has two of these chips and they're capable of doing a 16x16
-; bit multiply, or  16/16 bit divide, in 16 clock cycles (or about the
-; same time it takes the 1802 to execute a single instruction!).  Note
-; that the two CDP1855 chips are daisy chained and cooperate with each other
-; to share a single set of I/O ports.
-
-; CDP1855 Control Register bits ...
-MD.CPRE	 .EQU	BIT7	   	; enable clock prescaler
-MD.RSTS	 .EQU	BIT6		; reset MDU state machine
-MD.NMDU  .EQU	BIT5+BIT4	; number of MDUs present
-MD.1MDU	 .EQU	BIT5+BIT4	; one lonely MDU only
-MD.2MDU	 .EQU	BIT5		; two MDUs
-MD.3MDU	 .EQU	BIT4		; three MDUs
-MD.4MDU	 .EQU	0		; four MDUs
-MD.RSTY	 .EQU	BIT3		; reset Y register
-MD.RSTZ	 .EQU	BIT2		; reset Z register
-MD.OPER	 .EQU	BIT1+BIT0	; MDU operation
-MD.NOP	 .EQU	0		; do nothing
-MD.MUL	 .EQU	BIT0		; multiply
-MD.DIV	 .EQU	BIT1		; divide
-
-; CDP1855 Status Register bits ...
-MD.OVF	 .EQU	BIT0		; overflow detected
+;   Note that the SBC1802 has two PSG chips, and there's a PSG1ADR and also a
+; PSG2ADR defined here.  There is, however, ONLY ONE PSGDATA address!  That's
+; not a mistake - see the comments on the PSG page for more details.
+PSG1ADR	.EQU	2	; PSG #1 register address (write only)
+PSG2ADR	.EQU	6	; PSG #2 register address (write only)
+PSGDATA	.EQU	3	; PSG data port (read/write) (BOTH PSGs!)
 
 	.SBTTL	CDP1878 Timer Counter Definitions
 
@@ -947,7 +923,7 @@ PP.OR	 .EQU	BIT5		;   OR "   "  "   "
 ; CDP1851 Control Register interrupt enable/disable bits ...
 PP.SIEN	 .EQU	$01		; set interrupt enable
 PP.INTE	 .EQU	BIT7		; enable interrupts (else disable)
-;PP.INTB .EQU	BIT3		; for port B (else port A)
+PP.SIEB .EQU	BIT3		; for port B (else port A)
 
 ; CDP1851 Status register bits (all modes) ...
 PP.BINT	 .EQU	BIT0		; port B interrupt request
@@ -961,10 +937,38 @@ PP.BSTB	 .EQU	BIT7		; B STROBE   "    "
 
 	.SBTTL	AY-3-8912 Programmable Sound Generator Definitions
 
+:++
 ;   Note that the AY-3-8910, 8912 and 8913 are all identical as far as the
 ; software is concerned.  They differ only in package, pin out and hardware
 ; interface.
-
+;
+;   The 8912 has an A8 address input which must be 1 to select the chip.  In
+; the SBC1802, which has two 8912 PSG chips, A8 is wired up to NOT N2 for
+; PSG#1, and N2 for PSG#2.  The funky thing about the AY-3-891x chips is that
+; this A8 input is LATCHED WHEN THE REGISTER ADDRESS IS LOADED!  A8 is totally
+; ignored when reading or writing the PSG data port.  This means that the
+; following sequence doesn't work as you might expect -
+;
+;	SEX PC
+;	OUT PSG1ADR\  .BYTE PSGR17
+;	OUT PSG2ADR\  .BYTE PSGR16
+;	OUT PSG1DATA\ .BYTE $55
+;	OUT PSG2DATA\ .BYTE $AA
+;
+;   In this case both writes to the PSG data port will write to PSG#2 because
+; it was the last address loaded.  PSG#1 will be unaffected by this sequence!
+; The correct way would be to do this instead -
+;
+;	OUT PSG1ADR\  .BYTE PSGR17
+;	OUT PSGDATA\  .BYTE $55
+;	OUT PSG2ADR\  .BYTE PSGR16
+;	OUT PSGDATA\  .BYTE $AA
+;
+;   The bottom line is that you should always load the PSG address register
+; before reading or writing the data port.   This also why there are two 1802
+; PSG I/O addresses defined, but only one PSG data port.  Awkward, but we can
+; program around it...
+;
 ;   Another useful factoid is that the 8910 actually decodes all eight bits of
 ; the register select address.  Yes, there are only 16 registers so only the
 ; lower four bits select the register, but the upper four bits MUST be zero or
@@ -977,6 +981,7 @@ PP.BSTB	 .EQU	BIT7		; B STROBE   "    "
 ; parts have found their way onto the market and you will sometimes find chips
 ; that want non-zero select codes.  There's no real way to find out, except by
 ; trial and error...
+;--
 PSGSEL	.EQU	$00		; PSG select code*16 (e.g. $10, $20, etc)
 
 ;   Define mnemonics for the PSG registers just to make it easier to use the
@@ -1001,9 +1006,10 @@ PSGR17	.EQU	PSGSEL+$F	;  "   "   B   "
 ;
 PSGVOL	.EQU	7	; default volume (0..15)
 
-;   This macro outputs a constant, inline, value to a PSG register ..
-; Note that it assumes the correct I/O group has already been selected!!!
-#define OUTPSG(r,d)	SEX PC\ OUT PSGADDR\ .DB r\ OUT PSGDATA\ .DB d
+;   This macro outputs a constant, inline, value to a PSG register.  Note that
+; it assumes the correct I/O group has already been selected AND that X=PC!
+#define OUTPSG1(r,d)	OUT PSG1ADR\ .BYTE r\ OUT PSGDATA\ .BYTE d
+#define OUTPSG2(r,d)	OUT PSG2ADR\ .BYTE r\ OUT PSGDATA\ .BYTE d
 
 	.SBTTL	ElfOS and MicroDOS Definitions
 

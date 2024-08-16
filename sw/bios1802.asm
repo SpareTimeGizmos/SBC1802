@@ -154,9 +154,12 @@
 ; 037	-- Change TRAP not to push R2 twice (and save a few bytes).
 ;
 ; 038	-- Fix TUINIT to send breaks the way the CDP1854 really works!
+;
+; 039	-- The CDP1854 trashes the first character transmitted after a BREAK.
+;	   Always transmit a null after a BREAK!
 ;--
 VERMAJ	.EQU	1	; major version number
-VEREDT	.EQU	38	; and the edit level
+VEREDT	.EQU	39	; and the edit level
 
 	.SBTTL	"BIOS Memory Layout"
 
@@ -1791,13 +1794,17 @@ TUINIT:	PUSHR(T2)		; save T2 (used by TUGET!)
 TUINI1:	LDN T2\ ORI SL.BRK	; set the force break bit
 	STR SP\ SEX SP		; ...
 	OUT SL1CTL\ DEC SP	; write the SLU1 control register
-	LDI 50 \ PLO P1		; call DLy2MS 50 times
-TUINI2:	DLY2MS			; spin for 2ms 
-	DEC P1 \ GLO P1		; have we waited for 100ms?
-	LBNZ	TUINI2		; no - keep going
-	LDN T2\ STR SP		; get SLU1 character format aagain
+	CALL(DLY100)		; delay for 100ms
+	LDN T2\ STR SP		; get SLU1 character format again
 	OUT SL1CTL\ DEC SP	; write the SLU1 control register
-	INP	SL1BUF		; and discard any junk received
+;   The CDP1854 needs us to transmit a byte, which will be turned into garbage
+; by the other end since there will be no start bit, to finally and completely
+; clear the break condition.  Note that we don't bother to check THRE here -
+; we've just delayed for 100ms; I'm pretty sure it's done now!
+	LDI 0\ STR SP		; transmit a null byte
+	OUT SL1BUF\ DEC SP	;  ...
+	CALL(DLY100)		; delay for 100ms again
+	INP	SL1BUF		; and discard any junk we received
 
 ;   Send not one but two INIT packets.  Note that the INIT packets are just a
 ; single byte.  There is no checksum, nothing, else.
@@ -2327,6 +2334,19 @@ FREEMEM:RLDI(P1,USRRAM)		; this is all we need
 BIOSBITS .EQU	FGD_SDFUN+FGD_NBREAD+FGD_F0VEC+FGD_F8VEC+FGD_RTC+FGD_UART+FGD_IDE+FGD_EVER
 GETDEV:	RLDI(P1,BIOSBITS)
 	RETURN
+
+	.SBTTL	100ms Delay
+
+;++
+;   This little routine delays for 100ms, assuming the 2.5MHz clock speed.
+; It's used by the TU58 and IDE code, and got stuck here because of space
+; limitations in the BIOS sections where those functions reside.
+;--
+DLY100:	LDI 50 \ PLO P1		; call DLy2MS 50 times
+DLY101:	DLY2MS			; spin for 2ms 
+	DEC P1 \ GLO P1		; have we waited for 100ms?
+	LBNZ	DLY101		; no - keep going
+	RETURN			; all done
 
 	.SBTTL	"Standard Call and Return Technique"
 

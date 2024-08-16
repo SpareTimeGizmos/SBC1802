@@ -78,21 +78,21 @@ IOWR = TPB & MRD;
 /* group select implemented on the expansion card.  Nothing else should	*/
 /* respond to port 1.	       	   	     	    	    	 	*/
 FIELD N=[N2..N0];
-WR_LEDS     = IOWR & CS_GROUP0 & N:'D'4;
-RD_SWITCHES = IORD & CS_GROUP0 & N:'D'4;
-WR_IDE_CTL  = IOWR & CS_GROUP0 & N:'D'5;
-WR_IDE_DATA = IOWR & CS_GROUP0 & N:'D'6;
-RD_IDE_DATA = IORD & CS_GROUP0 & N:'D'6;
-WR_BAUD     = IOWR & CS_GROUP0 & N:'D'7;
+WR_LEDS     = IOWR & CS_GROUP0 & N:'d'4;
+RD_SWITCHES = IORD & CS_GROUP0 & N:'d'4;
+WR_IDE_CTL  = IOWR & CS_GROUP0 & N:'d'5;
+WR_IDE_DATA = IOWR & CS_GROUP0 & N:'d'6;
+RD_IDE_DATA = IORD & CS_GROUP0 & N:'d'6;
+WR_BAUD     = IOWR & CS_GROUP0 & N:'d'7;
 
 
 /*   The only thing left to deal with is EXT_IO_IN, which controls the	*/
 /* the direction of the data bus buffers between the base and expansion	*/
 /* cards.  Normally this buffer drives our data out, but when EXT_IO_IN	*/
-/* is asserted then data from the expansion card is drive onto our bus.	*/
-/* THis is true any time we 1) have an I/O read, 2) N is not 0, and 3) 	*/
+/* is asserted then data from the expansion card is driven onto our bus.*/
+/* This is true any time we 1) have an I/O read, 2) N is not 0, and 3) 	*/
 /* CS_GROUP0 is NOT asserted, OR for any I/O read when N=1. The special	*/
 /* case for N=1 is needed so we can read the I/O group register on the	*/
 /* expansion card regardless of what I/O group is selected!	   	*/
 EXT_IO_IN = (IORD & (N0#N1#N2) & !CS_GROUP0)
-	  # (IORD &  N:'D'1    &  CS_GROUP0);
+	  # (IORD &  N:'d'1    &  CS_GROUP0);

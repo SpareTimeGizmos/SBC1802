@@ -41,7 +41,7 @@
 /*       |       |    |       |    |       |    |       |    |       |	*/
 /*       | RAM 1 |    |       |    | EPROM |    | EPROM |    | EPROM |	*/
 /*       |       |    | RAM 1 |    |       |    |       |    |       |	*/
-/* 8400  +-------+    |       |    |       |    |       |    |       |	*/
+/* 8800  +-------+    |       |    |       |    |       |    |       |	*/
 /*       | EPROM |    |       |    |       |    |       |    |       |	*/
 /* 8000  +-------+    +-------+    +-------+    +-------+    +-------+	*/
 /*       |       |    |       |    |       |    |       |    |       |	*/
@@ -103,11 +103,12 @@
 /*									*/
 /* REVISION HISTORY							*/
 /* 14-AUG-21	RLA	New file.					*/
+/*  1-AUG-24	RLA	UT71 should extend to $87FF, not $83FF!		*/
 /*--									*/
 NAME		MEMORY;
 PARTNO		MEMORY;
-REVISION	A;
-DATE		08/16/21;
+REVISION	B;
+DATE		08/01/24;
 DESIGNER	Robert Armstrong;
 COMPANY		Spare Time Gizmos;
 ASSEMBLY	SBC1802;
@@ -191,7 +192,7 @@ CS_RAM0 =  A:['H'0000..'H'7FFF] & (MICRODOS # ELFOS # ROM0);
 /* mode, and for the BIOS in all modes.  It is also selected for the	*/
 /* lower half of memory in ROM1 mode, and for the STG scratch pad area	*/
 /* in ALL modes. 	   	      	      	      	      	  	*/
-CS_RAM1 = (A:['H'8400..'H'EFFF] & MICRODOS)
+CS_RAM1 = (A:['H'8800..'H'EFFF] & MICRODOS)
 	# (A:['H'8000..'H'EFFF] & ELFOS)
 	# (A:['H'0000..'H'7FFF] & ROM1)
         # SCRATCH_RAM;
@@ -203,7 +204,7 @@ CS_RAM1 = (A:['H'8400..'H'EFFF] & MICRODOS)
 /* upper half of memory in ROM0 or ROM1 modes.  Finally, the EPROM is 	*/
 /* always selected everywhere in BOOTSTRAP mode...	    	  	*/
 CS_ROM  = (A:['H'F000..'H'FFFF] & !SCRATCH_PAGE)
-        # (A:['H'8000..'H'83FF] & MICRODOS)
+        # (A:['H'8000..'H'87FF] & MICRODOS)
         # (A:['H'8000..'H'EFFF] & (ROM0 # ROM1 # BOOTSTRAP))
         # (A:['H'0000..'H'7FFF] & BOOTSTRAP);
 

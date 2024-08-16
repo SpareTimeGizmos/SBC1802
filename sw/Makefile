@@ -30,6 +30,7 @@
 # dd-mmm-yy	who     description
 # 17-Jan-24	RLA	New file.
 # 17-May-24	RLA	Add BASIC3.
+#  8-Aug-24	RLA	Add music.asm and updater.asm
 #--
 
 # Tool paths and options - you can change these as necessary...
@@ -46,7 +47,8 @@ ECHO=C:/cygwin64/bin/echo.exe
 DATE=C:/cygwin64/bin/date.exe
 
 # All components of the EPROM image ...
-HEXFILES = sbc1802.hex bios1802.hex ut1802.hex basic3.hex help.hex
+HEXFILES = sbc1802.hex bios1802.hex ut1802.hex basic3.hex \
+	   help.hex music.hex updater.hex
 LISTFILES = $(HEXFILES:.hex=.lst)
 
 # The default target builds everything...
@@ -70,6 +72,14 @@ ut1802.hex:	ut1802.asm sbc1802.inc bios.inc ut71.inc
 basic3.hex:	basic3.asm
 	@$(ECHO) -e "\n*** BUILDING BASIC3 ***"
 	$(A18) $< -l $(<:.asm=.lst) -o $@
+
+music.hex:	music.asm sbc1802.inc
+	@$(ECHO) -e "\n*** BUILDING SBC1802 MUSIC DEMO ***"
+	@$(TASM) $(TASMOPTS) $< $@
+
+updater.hex:	updater.asm sbc1802.inc
+	@$(ECHO) -e "\n*** BUILDING SBC1802 FIRMWARE UPDATER ***"
+	@$(TASM) $(TASMOPTS) $< $@
 
 help.hex:	sbc1802.hlp
 	@$(ECHO) -e "\n*** COMPILING HELP TEXT ***"
