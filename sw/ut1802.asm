@@ -82,9 +82,10 @@
 ; 004	-- Add some UT62 entry points, especially those for cassette tape I/O.
 ;	   None of these do anything except cause errors!
 ;
+; 005	-- Make the console output routins wait for CTS ...
 ; --
 VERMAJ	.EQU	1	; major version number
-VEREDT	.EQU	4	; and the edit level
+VEREDT	.EQU	5	; and the edit level
 
 	.SBTTL	"Implementation Notes"
 
@@ -400,6 +401,7 @@ TY3:	PLO	P1
 
 BEGIN:	INP SL0STS\ SHL
 	BNF	BEGIN
+	ANI $20\ BZ BEGIN	; wait for CTS too
 	INC	SP		; PT BACK TO CHARACTER
 	OUT	SL0BUF
 	DEC	SP

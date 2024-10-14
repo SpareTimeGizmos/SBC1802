@@ -157,9 +157,11 @@
 ;
 ; 039	-- The CDP1854 trashes the first character transmitted after a BREAK.
 ;	   Always transmit a null after a BREAK!
+;
+; 040	-- Make CONOUT check for CTS before sending
 ;--
 VERMAJ	.EQU	1	; major version number
-VEREDT	.EQU	39	; and the edit level
+VEREDT	.EQU	40	; and the edit level
 
 	.SBTTL	"BIOS Memory Layout"
 
@@ -499,6 +501,8 @@ CONOUT:	PUSHD			; save the byte to print
 CONOU1:	SEX SP\ INP SL0STS	; read the UART status register
 	ANI	SL.THRE		; is the transmitter busy?
 	LBZ	CONOU1		; wait if it is
+	LDN SP\ ANI SL.ES	; and check for CTS too
+	LBZ	CONOU1		; wait if CTS is clear
 	IRX			; point to the character to type
 	OUT	SL0BUF		; and type it
 	DEC	SP		; fix the stack pointer
