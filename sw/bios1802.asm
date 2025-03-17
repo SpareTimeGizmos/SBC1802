@@ -36,7 +36,7 @@
 	.INCLUDE "bios.inc"	; Mike's BIOS entry points and declarations
 	.LIST
 	
-	.SBTTL	"ElfOS Compatible BIOS"
+	.SBTTL	ElfOS Compatible BIOS
 
 ;++
 ;   This file is an ElfOS compatible BIOS for the SBC1802.  The original
@@ -65,7 +65,7 @@
 ; it easy enough to arbitrarily partition the code into separate memory chunks.
 ;--
 
-	.SBTTL	"Revision History"
+	.SBTTL	Revision History
 
 ;++
 ; REVISION HISTORY
@@ -159,11 +159,75 @@
 ;	   Always transmit a null after a BREAK!
 ;
 ; 040	-- Make CONOUT check for CTS before sending
+;
+; 041	-- Remove DTTOAS, TMTOAS, ASTODT and ASTOTM from the BIOS.  All these
+;	   functions are now unimplemented.
+;
+; 042	-- Remove F_IDSIZE, F_IDIDENT, F_SDSIZE, F_SDIDENT, TUSIZE, TUIDENT,
+;	   etc from the BIOS.  All these functions are now unimplemented!
+;
+; 043	-- COLDBOOT doesn't work - you can't call F_INITCALL with PC == R3!
+;
+; 044	-- Change to use DLY1MS instead of DLY2MS ...
+;
+; 045	-- Remove DRVRST and SDRESET.  Drives are reset only once, at startup.
+;
+; 046	-- Make TUREAD and TUWRITE handle drive reported errors better.
+;
+; 047	-- Change the BIOS version to MANUFACTURER and EDIT LEVEL, like MiniDOS.
+;
+; 048	-- Do away with FGD_EVER in F_GETDEV.
+;
+; 049	-- Move btcheck and F_BTCHECK to the mapped part of the code.
+;	   Remove the "bootable" check from SDBOOT.
+;
+; 050	-- Fix INISCRT (F_INITCALL) so that it works even if P=R3.
+;
+; 051	-- Change F_GETHWF to F_TESTHWF to directly test configuration.
+;
+; 052	-- Rewrite DRVSEL to a) check HWFLAGS to verify the selected drive is
+;	   installed, and b) to wait for BUSY=0 before changing the selection.
+;
+; 053	-- Rewrite DISKRD/DISKWR to remove timeouts and consistently return
+;	   an error code in the event of failure.
+;
+; 054	-- Implement the MiniDOS style multiple device addressing in the
+;	   MDREAD/MDWRITE routines.  By defaultl, F_IDEREAD and F_IDEWRITE call
+;	   these now.  F_SDREAD and F_SDWRITE however, work as before.
+;
+; 055	-- The character count for F_INPUTL should not include the terminating
+;	   NULL character.
+;
+; 056	-- MDREAD and MDWRITE must preserve T2.1, otherwise it breaks MiniDOS.
+;
+; 057	-- TUREAD and TUWRUTE also need to actually preserve T2 (and not just
+; 	   zero it!).  More over, they need to take the error return if T2 != 0
+;	   (i.e. block number .GT. 65535).
+;
+; 058	-- Implement SL1OUT, SL1HIT, SL1IN, SL1GET and SL1NBR routines.  These
+;	   parallel the SLU0 console routines, but for SLU1.  Use SL1OUT for
+;	   the TU58 code.
+;
+; 059	-- Add the BD.RTS bit in BAUD.1 to enable/disable flow control.
+;
+; 060	-- Add the BD.ALT bit in BAUD.1 to redirect all the CONxxx functions
+;	   to use SLU1 instead.
+;
+; 061	-- Make SL1GET obey the echo flag in BAUD.1 just as CONGET does...
+;
+; 062	-- Remove F_RTCTEST (it's never used) and just have F_GETTOD and
+;	   F_SETTOD test the hardware flags directly.
+;
+; 063	-- Add the hardware test for SLU1 back to TUINIT.  And at the same time
+;	   also check whether SLU1 is being used as an alternate console.
+;
+; 064	-- TUINIT accidentally corrupts the control register of SLU1!
 ;--
-VERMAJ	.EQU	1	; major version number
-VEREDT	.EQU	40	; and the edit level
+VEREDT	.EQU	64	; and the edit level
 
-	.SBTTL	"BIOS Memory Layout"
+;TODO
+
+	.SBTTL	BIOS Memory Layout
 
 ;++
 ;   The memory image for the BIOS is unfortunately constrained by several
@@ -177,7 +241,7 @@ VEREDT	.EQU	40	; and the edit level
 ;	- console UART primitives, console I/O routines
 ;	- console line input w/editing (F_INPUTL)
 ;
-;	... approximately $70 (112) bytes free
+;	... approximately 162 bytes free
 ;
 ; $F800	- extended BIOS entry vectors
 ;	- CDP1879 real time clock code
@@ -185,12 +249,13 @@ VEREDT	.EQU	40	; and the edit level
 ;	- TU58 serial tape or disk code
 ;	- disk/tape bootstrap
 ;
-;	... approximately $3C (60) bytes free
+;	... approximately 418 bytes free
 ;
 ; $FE00	- RAMPAGE, MCR, CDP1877 PIC, and CDP1879 RTC
 ;
 ; $FF00	- primary BIOS entry vectors
 ; 	- SCRT routines, F_FREEMEM and F_GETDEV
+;	... approximately 32 bytes free
 ; $FFE0	- LBR to the SCRT "CALL" routine
 ; $FFF1	- LBR to the SCRT "RETURN" routine
 ; $FFF7	- pointer to BIOS copyright notice (2 bytes)
@@ -203,7 +268,7 @@ VEREDT	.EQU	40	; and the edit level
 ; pretty much all ElfOS programs.  The page at $FF00 is full and no new vectors
 ; will be added there, however if it becomes necessary to add BIOS functions in
 ; the future then new vectors will be added to the end of the table at $F800.
-; The table at $F000 is for SBC1802 specific functions only!
+; The table at $F000 is for "manufacturer" specific functions only!
 ;
 ;   The page at $FExx is actually RAM and memory mapped peripherals, and
 ; references to this space don't access EPROM at all.  Our scratch pad RAM
@@ -218,16 +283,22 @@ VEREDT	.EQU	40	; and the edit level
 ;
 ; These are also defined in SBC1802.INC.  Note that this RAM space and these
 ; peripherals are mapped in ALL memory maps.
+;
+;TODO
+; REMOVE f_findtkn, and f_idnum AND CHANGE THEM TO RAM LOADABLE VECTORS?
+; ADD VECTORS FOR THEM TO $FExx RAM AND INITIALIZE TO MINIMON/TRAP?
 ;--
 
-	.SBTTL	"SBC1802 Specific Entry Vectors"
+	.SBTTL	SBC1802 Specific Entry Vectors
 
+;++
 ;   The BIOS uses a table (actually, three separate tables!) of LBR instructions
 ; to dispatch to the correct function.  Each entry vector is located at a
 ; permanently fixed address defined by a name in BIOS.INC and, needless to say,
 ; it's critical that the code we generate match up with the definitions there.
 ; This macro generates an entry vector AND verifies that it is at the address
 ; specified by BIOS.INC.
+;--
 #define BENTRY(vec,rtn)	\#if (vec-$)
 #defcont		\	.echo "VECTOR ERROR FOR vec\n"
 #defcont		\#endif
@@ -240,22 +311,30 @@ VEREDT	.EQU	40	; and the edit level
 	BENTRY(F_TRAP,      TRAP)	; SBC1802 debugger trap vector
 	BENTRY(F_CONTINUE,  CONTINUE)	; restore user context and continue
 	BENTRY(F_RUN,       RUNPGM)	; run user program (with P=0)
+; SBC1802 specific functions for accessing the TU58 ...
 	BENTRY(F_TUINIT,    TUINIT)	; initialize TU58
 	BENTRY(F_TUREAD,    TUREAD)	; read TU58 sector
 	BENTRY(F_TUWRITE,   TUWRITE)	; write TU58 sector
-	BENTRY(F_HWFLAGS,   GETHWF)	; return SBC1802 hardware flags
-	BENTRY(F_SDIDENT,   SDIDENT)	; return storage device identification
-	BENTRY(F_BTCHECK,   btcheck)	; check for valid ElfOS boot sector
+; SBC1802 SLU1 specific functions ...
+	BENTRY(F_SL1OUT,    SL1OUT)	; blocking output to SLU1
+	BENTRY(F_SL1HIT,    SL1HIT)	; test SLU1 for input
+	BENTRY(F_SL1IN,	    SL1IN)	; blocking read w/o echo
+	BENTRY(F_SL1GET,    SL1GET)	; blocking read with echo
+	BENTRY(F_SL1NBR,    SL1NBR)	; non-blocking read w/o echo
+; Other SBC1802 specific functions ...
+	BENTRY(F_TESTHWF,   TESTHW)	; test SBC1802 hardware flags
 
 ;   The copyright notice always follows the last SBC1802 vector.  There's also a
 ; BIOS version number, but that's located at the end of this file (right before
 ; the checksum!).
-RIGHTS:	.TEXT	"Copyright (C) 2021-2024 by Spare Time Gizmos. All rights reserved.\r\n"
+RIGHTS:	.TEXT	"Copyright (C) 2021-2025 by Spare Time Gizmos.\r\n"
 	.TEXT	"Portions Copyright (C) 2004-2020 by Mike Riley.\r\n"
+	.TEXT	"All rights reserved.\r\n"
 	.BYTE	0
 
-	.SBTTL	"Save User Context"
+	.SBTTL	Save User Context
 
+;++
 ; BREAKPOINT TRAPS
 ;   Whenever the firmware starts a user program running it will initialize R1
 ; with the address of this routine.  Provided that the user program does not 
@@ -272,8 +351,9 @@ RIGHTS:	.TEXT	"Copyright (C) 2021-2024 by Spare Time Gizmos. All rights reserved
 ;   This code has to be here, in the BIOS, so that it will be mapped into memory
 ; at all times.  The rest of the firmware EPROM is unmapped whenever we're
 ; running an ElfOS or MicroDOS program.
+;--
 
-
+;++
 ; MINIMON
 ;   Mike's original BIOS contained a "minimon" routine, which was a super simple
 ; debug monitor that allowed you to examine and modify memory and start program
@@ -287,6 +367,7 @@ RIGHTS:	.TEXT	"Copyright (C) 2021-2024 by Spare Time Gizmos. All rights reserved
 ; PC which gets saved will be the R3 value right before the "SEP R1", and it's
 ; worth thinking about what would happen if the user tells us to CONTINUE in
 ; that case.  That's why there's an LBR back to MINIMON after the SEP R1...
+;--
 MINIMON:STR	SP		; save D temporarily
 	RLDI(R1,TRAP)		; make sure R1 is valid
 	LDN	SP		; restore D
@@ -357,8 +438,9 @@ TRAP:	SEX R2\ STXD		; save D on the user's stack
 	RLDI(A,WARM)		; continue processing from $8005
 	LBR	F_INITCALL	; and initialize the SCRT routines
 
-	.SBTTL	"Restore User Contaxt"
+	.SBTTL	Restore User Contaxt
 
+;++
 ;   This BIOS routine is called by the main SBC1802 EPROM firmware when we're
 ; ready to start or resume execution of a user program.  It will select the
 ; correct memory map, either ELFOS or MICRODOS, restore the user's registers
@@ -385,6 +467,7 @@ TRAP:	SEX R2\ STXD		; save D on the user's stack
 ;	<the REGS area, et al, in RAMPAGE contains the user context>
 ;	CALL(F_CONTINUE)
 ;	<never return - jumps to the user's program instead!>
+;--
 CONTINUE:
 	STR	SP		; save the desired memory map
 	RLDI(DP,MCR)		; point to the memory control register
@@ -433,8 +516,9 @@ CONT1:	RLDI(R0,REGS+4)		; point R0 at the saved registers
 ; the TRAP routine.  The contents of R0 are never restored...
 	LBR	TRAPX	; go restore (X,P)
 
-	.SBTTL	"Run Program"
+	.SBTTL	Run Program
 
+;++
 ;   The BIOS F_RUN entry will run a user program using P=R0 and with pretty much
 ; the same conditions that you would get after a 1802 hardware reset.  The
 ; caller should pass the desired memory map, usually either MC.ELOS or MC.MDOS,
@@ -458,6 +542,7 @@ CONT1:	RLDI(R0,REGS+4)		; point R0 at the saved registers
 ; a problem for some programs, but remember that a real 1802 inhibits interrupts
 ; for one instruction after RESET.  That gives the programmer a chance to do a
 ; DIS as the firsts instruction, but that won't work here.
+;--
 RUNPGM:	STR	SP		; save the desired memory map
 	RLDI(DP,MCR)		; point to the memory control register
 	LDN SP\ STR DP		; and select the desired memory map
@@ -486,33 +571,81 @@ RUNPGM:	STR	SP		; save the desired memory map
 	DIS			; disable interrupts
 	 .BYTE	 $00		; set X=P=0 and we're outta here!
 
-	.SBTTL	"Run Time Library Functions"
+	.SBTTL	Unimplemented BIOS Function Trap
+;++
+;   We have, over time, accumulated a number of BIOS entry points which, for
+; better or worse, are no longer implemented.  Rather than having these entry
+; points branch to a simple NOP RETURN, instead we fill their vector with a
+; CALL to this routine.  Conveniently a CALL opcode (SEP CALLPC) and an address
+; word take exactly the same number of bytes as the usual "LBR xyz" so we can
+; do this without messing up the vector table.
+;
+;   The effect is to push the caller's return address (currently in A) onto the
+; stack and then save the address of the vector (or actually the vector address
+; +3) in A.  This allows us to print an error message that says "UNIMPLEMENTED
+; BIOS CALL" or some such and give both the vector that was called and the
+; address it was called from.  Neat, no?
+;
+;   What we need to do here is 1) get the caller's return address off the stack,
+; and 2) switch the memory map back to ROM0 so all the EPROM is mapped, and
+; 3) switch back to the monitor stack at $FExx, and lastly 4) jump to the
+; UNIMPL routine in the main monitor code.  That will take care of printing
+; the message and then starting the firmware command scanner.
+;
+;   Why get the return address from the stack and then switch stacks?  Remember
+; that when we get here we're running on the application program's stack, and
+; that can be anything and anywhere.  It might even be in the upper part of
+; RAM, which will be unmapped as soon we switch to the ROM0 map.  Rather than
+; deal with that complexity later, it's easier to do it now.
+;
+;   BTRAP wants the vector address in P3 and the user address in P4.
+;--
+UNIMPL:	RCOPY(P3,A)		; put the vector address in P3
+	SEX SP\ IRX\ POPRL(P4)	; and the caller's return address in P4
+	RLDI(DP,MCR)		; point to the memory control register
+	LDI MC.ROM0\ STR DP	; select the ROM0 memory map
+	RLDI(SP,STACK)		; initialize the stack
+	RLDI(A,WARM+3)		; continue processing from BTRAP
+	LBR	F_INITCALL	; and initialize the SCRT routines
+
+#define BUNIMP(vec)	\#if (vec-$)
+#defcont		\	.echo "VECTOR ERROR FOR vec\n"
+#defcont		\#endif
+#defcont		\	CALL(UNIMPL)
+
+	.SBTTL	Run Time Library Functions
 
 	.include "rtl1802.asm"
 
-	.SBTTL	"Console UART I/O Primitives"
+	.SBTTL	Console UART I/O Primitives
 
+;++
 ;   This routine writes one byte from D to the console UART SLU0.  If the
 ; UART transmitter is currently busy, then we'll wait until it's finished.
 ; Note that this returns with the original character still in D, unchanged.
 ; That's important for CONGET!
+;--
 CONOUT:	PUSHD			; save the byte to print
+	GHI BAUD\ ANI BD.ALT	; alternate console selected?
+	LBNZ	SL1OU0		; yes - use that
 	OUTI(GROUP,BASEGRP)	; make sure the base board I/O group is selected
 CONOU1:	SEX SP\ INP SL0STS	; read the UART status register
 	ANI	SL.THRE		; is the transmitter busy?
 	LBZ	CONOU1		; wait if it is
-	LDN SP\ ANI SL.ES	; and check for CTS too
+	GHI BAUD\ ANI BD.RTS	; is flow control enabled?
+	LBNZ	CONOU2		; no - just output now
+	LDN SP\ ANI SL.ES	; yes - check for CTS too
 	LBZ	CONOU1		; wait if CTS is clear
-	IRX			; point to the character to type
-	OUT	SL0BUF		; and type it
-	DEC	SP		; fix the stack pointer
-	LDN	SP		; restore the original character
+CONOU2:	IRX\ OUT SL0BUF		; type the saved character
+	DEC SP\ LDN SP		; restore the original character
 	RETURN			; and we're done
 
 
 ;   Test to see if the console UART has a character ready to be read, and return
 ; with DF=1 if it does.  Don't wait, and don't actually read the character.
-CONHIT:	OUTI(GROUP,BASEGRP)	; select the base board I/O group
+CONHIT:	GHI BAUD\ ANI BD.ALT	; alternate console selected?
+	LBNZ	SL1HIT		; yes - use SLU1 instead
+	OUTI(GROUP,BASEGRP)	; select the base board I/O group
 	SEX SP\ INP SL0STS	; read the UART status
 	SHR			; put the DA bit into DF
 	RETURN			; and we're done
@@ -521,14 +654,18 @@ CONHIT:	OUTI(GROUP,BASEGRP)	; select the base board I/O group
 ;   Read one character from the console UART and return it in D, waiting for
 ; one to become available if necessary.  The character read is NEVER echoed,
 ; regardless of the echo flag in the BAUD register.
-CONIN:	CALL(CONHIT)		; see if a character is ready
+CONIN:	GHI BAUD\ ANI BD.ALT	; alternate console selected?
+	LBNZ	SL1IN		; yes - use SLU1 instead
+	CALL(CONHIT)		; see if a character is ready
 	LBNF	CONIN		; and wait until one is
 	INP	SL0BUF		; read the receiver buffer
 	RETURN			; and return the byte in D
 
 ;   This routine is the same as CONIN, however this one DOES echo the input
 ; but only if the echo flag in BAUD.1 is set...
-CONGET:	CALL(CONIN)		; read a character
+CONGET:	GHI BAUD\ ANI BD.ALT	; is the alternate console selected?
+	LBNZ	SL1GET		; yes - use that instead
+	CALL(CONIN)		; read a character
 	PLO	BAUD		; and save it for a moment
 	GHI	BAUD		; see if echo is required
 	SHR			; put the echo bit into DF
@@ -540,14 +677,17 @@ CONGET:	CALL(CONIN)		; read a character
 ; waiting in the UART buffer, then return immediately with DF=0.  If there
 ; is a character, then read it, echo it according to BAUD.1, and return
 ; it with DF=1.
-NBREAD:	CALL(CONHIT)		; see if a character is waiting
+NBREAD:	GHI BAUD\ ANI BD.ALT	; alternate console selected?
+	LBNZ	SL1NBR		; yes - use SLU1
+	CALL(CONHIT)		; see if a character is waiting
 	LBNF	NBREA1		; return with DF=0 if nothing there
 	CALL(CONGET)		; actually read the character and echo
 	SDF			; make sure DF=1
 NBREA1:	RETURN			; and we're done	
 
-	.SBTTL	"Set Console UART Baud Rate"
+	.SBTTL	Set Console UART Baud Rate
 
+;++
 ;   This routine will set the baud rate and character format for the console
 ; SLU0 serial port.  Bits 0..3 of the D register select the baud rate
 ; according to this table -
@@ -568,6 +708,7 @@ NBREA1:	RETURN			; and we're done
 ;
 ;   Also note that baud rates 6 and 7 select 38.4kBPS and 76.8kBPS on other
 ; systems, but the SBC1802 maxes out at 19.2kBPS.
+;--
 CONSET:	ANI	7		; ignore everything except the baud rate
 	ADI LOW(BDTAB1)\ PLO DP	; index into the baud rate table
 	LDI HIGH(BDTAB1)	; ...
@@ -586,8 +727,9 @@ CONSE1:	CDF\ RETURN		; always return DF=0 for success
 BDTAB1:	.BYTE	BD.300,  BD.1200, BD.2400, BD.4800
 	.BYTE	BD.9600, BD.19.2, 0,       0
 
-	.SBTTL	"Console UART Autobaud"
+	.SBTTL	Console UART Autobaud
 
+;++
 ;   The BIOS F_SETBD call will try to automatically determine the correct baud
 ; rate for the console (don't confuse this call with F_USETBD, which calls 
 ; the CONSET routine above).  The basic idea is for the user to press RETURN
@@ -612,6 +754,7 @@ BDTAB1:	.BYTE	BD.300,  BD.1200, BD.2400, BD.4800
 ;   Note that baud rates below 300 are not supported (does anybody actually
 ; have an ASR33 out there???) nor are baud rates above 19200 (the COM8116
 ; doesn't go any faster than that).
+;--
 AUTOBAUD:LDI 4\ CALL(CONSET)	; set the UART for 9600 baud
 	CALL(AUTOBD)		; try to recognize a <CR>
 	 .WORD	ABDTB1		;  ... autobaud table for 9600 baud
@@ -668,14 +811,66 @@ AUTOB4:	LDI 0\ PUSHD		; save the return code on the stack
 ; STILL SENDING right now!  To avoid having the last half of the CR show up as
 ; a garbage character, we have to delay long enough for the transmitter to
 ; finish.  Worst case at 300 baud a character takes 33ms to send, so we'll
-; delay for 50ms just to be safe.
-	DELAY(50)		; delay for 50ms
+; delay for 100ms just to be safe.
+	CALL(DLY100)		; delay for 100ms
 
 ; Read the UART buffer and status to be sure all errors are cleared ...
 	INP SL0BUF\ INP SL0STS	; ...
 	POPD\ SHL\ RETURN	; return the result in DF and we're done
 
-	.SBTTL	"Console Output Primitives"
+	.SBTTL	Auxiliary SLU1 I/O Primitives
+
+;++
+;   This routine writes one byte from D to the auxiliary UART SLU1.  If the
+; UART transmitter is currently busy, then we'll wait until it's finished.
+; Note that this returns with the original character still in D, unchanged.
+;--
+SL1OUT:	PUSHD			; save the byte to print
+SL1OU0:	OUTI(GROUP,SL1GRP)	; be sure the SLU1 I/O group is selected
+SL1OU1:	SEX SP\ INP SL1STS	; read the UART status register
+	ANI SL.THRE\ LBZ SL1OU1	; wait for THRE to set
+	IRX\ OUT SL1BUF		; output the character we saved
+	DEC SP\ LDN SP		; restore the original character
+	OUTI(GROUP,BASEGRP)	; just to be safe
+	RETURN			; and we're done
+
+
+;   Test to see if the auxiliary UART has a character ready to be read, and 
+; return with DF=1 if it does.  Don't wait, and don't actually read the
+; character.
+SL1HIT:	OUTI(GROUP,SL1GRP)	; select the SLU1 I/O group
+	SEX SP\ INP SL1STS	; read the UART status
+	SHR			; put the DA bit into DF
+	RETURN			; and that's it
+
+
+;   Read one character from the auxiliary UART and return it in D, waiting for
+; one to become available if necessary.  The character read is NEVER echoed.
+SL1IN:	CALL(SL1HIT)		; see if a character is ready
+	LBNF	SL1IN		; and wait until one is
+	INP	SL1BUF		; read the receiver buffer
+	RETURN			; and return the byte in D
+
+;   This routine is the same as SL1IN, however this one DOES echo the input,
+; but only if the echo flag in BAUD.1 is set...
+SL1GET:	CALL(SL1IN)		; read a character
+	PLO	BAUD		; and save it for a moment
+	GHI	BAUD		; see if echo is required
+	SHR			; put the echo bit into DF
+	GLO	BAUD		; and get the character back
+	LBDF	SL1OUT		; echo it if required
+	RETURN			; or return without echo
+
+;   Non-blocking read one character from the auxiliary UART.  If no character
+; is waiting in the UART buffer, then return immediately with DF=0.  If there
+; is a character, then read it, echo it, and return it with DF=1.
+SL1NBR:	CALL(SL1HIT)		; see if a character is waiting
+	LBNF	SL1NB1		; return with DF=0 if nothing there
+	CALL(SL1GET)		; actually read the character and echo
+	SDF			; make sure DF=1
+SL1NB1:	RETURN			; and we're done	
+
+	.SBTTL	Console Output Primitives
 
 ;   These routines are either used by INPUT (F_INPUTL), or are direct
 ; BIOS console output primitives themselves ...
@@ -727,7 +922,7 @@ INLMSG:	LDA	A		; get the next character
 	CALL(CONOUT)		; bot yet - print this one
 	LBR	INLMSG		; and keep going
 
-	.SBTTL	"Console Line Input w/Editing"
+	.SBTTL	Console Line Input w/Editing
 
 ;++
 ;   The INPUT and INPUTL routines read an entire line from the console and
@@ -758,7 +953,8 @@ INLMSG:	LDA	A		; get the next character
 ;
 ;   Lastly, INPUT and INPUTL are identical with the exeption that INPUTL allows
 ; the caller to specify the buffer size, but with INPUT it is assumed to be 256
-; bytes.
+; bytes.   And note that the buffer size DOES NOT include the terminating NULL
+; character!
 ;
 ; CALL:
 ;	P1/RF <- buffer address
@@ -796,7 +992,7 @@ INPUT1:	CALL(CONIN)		; read WITHOUT echo
 ; then echo a bell instead and don't store anything.  Remember that we always
 ; need at least one empty byte left over to store the terminating null!
 INPUT2:	GHI P3\ LBNZ INPU2A	; if the buffer size .GE. 256 then no worries
-	GLO P3\ SMI 2		; otherwise be sure there at least 2 bytes free
+	GLO P3\ SMI 1		; be sure there is at least 1 byte free
 	LBNF	INPBEL		; nope - the buffer is full
 INPU2A:	GLO BAUD\ STR P1	; store the original character in the buffer
 	CALL(TFCHAR)		; and echo it
@@ -852,34 +1048,44 @@ DELCHR:	SDF			; assume DF=1
 	DEC	P1		; and back up the buffer pointer
 	LDN	P1		; get the character we just erased
 	ANI	~$1F		; is it a control character??
-	BNZ	DELCH1		; no - quit now
+	LBNZ	DELCH1		; no - quit now
 	CALL(TBACKSP)		; yes - erase the "^" too
 DELCH1:	CDF			; and return with DF=0
 DELCH2:	RETURN			; ...
 
-	.SBTTL	"Get SBC1802 Hardware Flags"
+	.SBTTL	Test SBC1802 Hardware Configuration
 
 ;++
-;   The F_HWFLAGS call returns the SBC1802 HWFLAGS word, which is a bitmap of
-; the hardware options installed on this SBC1802.  It's set up by the POST
-; indicates what the POST found and what's actually working.  You can find a
-; list of them in the sbc1802.inc header file.
+;   This routine will check whether a particular hardware option is installed
+; on this system.  The argument, which is passed inline, is a mask of the
+; HWFLAGS bits to test.  Remember that all the H1.xxx bits are in the most
+; significant byte of HWFLAGS, and the H0.xxx bits are in the LSB.  And
+; remember that the 1802 is a big endian machine, so the inline argument is
+; passed MSB first!
 ;
-; CALL:
-;	CALL(F_HWFLAGS)
-;	<return hardware flags word in P1>
+;   And finally, if more than one bit is set in the mask, then the result
+; is an AND of all bits - in other words, ALL options specified must be
+; present for a successful return.
 ;
-;   BTW, the rather obscure coding here (saving the high byte temporarily
-; in BAUD) is to eliminate the need to save and restore another register!
-; Code space is tight...
+;CALL:
+;	CALL(TESTHW)
+;	 .BYTE	<H1 flags>,<H0 flags>
+;	<DF=0 if all option(s) installed, DF=1 if not>
 ;--
-GETHWF:	RLDI(P1,HWFLAGS)	; point at the data we desire
-	LDA P1\ PLO BAUD	; save the high byte temporarily
-	LDN P1\ PLO P1		; and put the low byte in P1
-	GLO BAUD\ PHI P1	; fix the high byte
-	RETURN			; and we're done!
+TESTHW:	PUSHR(T1)		; save a temporary register
+	RLDI(T1,HWFLAGS)	; and point to the hardware flags
+	LDA A\ STR SP		; put the first mask byte on the stack
+	LDA T1\ AND\ XOR	; and test the masked bits
+	LBNZ	TESTH1		; branch if they don't match
+	LDA A\ STR SP		; then test the second byte
+	LDA T1\ AND\ XOR	; ...
+	LBNZ	TESTH2		; again, branch if they don't match
+	CDF\ LBR TESTH3		; success!!
+TESTH1:	INC	A		; skip the second argument byte
+TESTH2:	SDF			; and return failure
+TESTH3:	IRX\ POPRL(T1)\ RETURN	; restore T1 and we're done
 
-	.SBTTL	"Binary to BCD and BCD to Binary Conversions"
+	.SBTTL	Binary to BCD and BCD to Binary Conversions
 
 ;++
 ; These are used by the CDP1879 real time clock ...
@@ -918,18 +1124,20 @@ BIN2B2:	ADI	10		; restore the remainder
 	ADD			; and add in the most significant BCD digit
 	RETURN			; we're done
 
-	.SBTTL	"Extended BIOS Entry Vectors"
+	.SBTTL	Extended BIOS Entry Vectors
 
 #if ($ > EBIOS)
 	.ECHO	"***** EBIOS VECTOR TABLE OVERWRITTEN *****\n"
 #endif
 	.ORG	EBIOS
 
+;++
 ;   On the implementations with a bit banged serial port, the F_BREAD/TYPE/TEST
 ; functions force access to the bit banged ports.  Likewise on implementations
 ; with a UART, the F_UREAD/TYPE/TEST functions force access to the UART.  We
 ; don't do bit banged serial at all, so we don't bother with the distinction
 ; here and all are the same ...
+;--
 	BENTRY(F_BREAD,   CONGET)	; ...
 	BENTRY(F_BTYPE,   CONOUT)	; ...
 	BENTRY(F_BTEST,   CONHIT)	; ...
@@ -939,18 +1147,18 @@ BIN2B2:	ADI	10		; restore the remainder
 	BENTRY(F_USETBD,  CONSET)	; set console baud rate and format
 	BENTRY(F_GETTOD,  GTOD)		; get current time of day
 	BENTRY(F_SETTOD,  STOD)		; set  "   "    "   "  "
-	BENTRY(F_RDNVR,   UNIMPL)	; read bytes from NVR
-	BENTRY(F_WRNVR,   UNIMPL)	; write bytes to NVR
-	BENTRY(F_IDESIZE, DISKSZ)	; get IDE drive size in MB
-	BENTRY(F_IDEID,   DISKID)	; get IDE drive identification
-	BENTRY(F_DTTOAS,  dttoas)	; convert date buffer to ASCII
-	BENTRY(F_TMTOAS,  tmtoas)	;  "   "  time   "    "    "
-	BENTRY(F_RTCTEST, RTCTEST)	; test for existence of RTC
-	BENTRY(F_ASTODT,  astodt)	; convert ASCII date to binary
-	BENTRY(F_ASTOTM,  astotm)	;  "   "    "   time  "   "
-	BENTRY(F_NVRCCHK, UNIMPL)	; compute checksum for NVR
+	BUNIMP(F_RDNVR)			; read bytes from NVR
+	BUNIMP(F_WRNVR)			; write bytes to NVR
+	BUNIMP(F_IDESIZE)		; deprecated
+	BUNIMP(F_IDEID)			; deprecated
+	BUNIMP(F_DTTOAS)		; convert date buffer to ASCII
+	BUNIMP(F_TMTOAS)		;  "   "  time   "    "    "
+	BUNIMP(F_RTCTEST)		; test for existence of RTC
+	BUNIMP(F_ASTODT)		; convert ASCII date to binary
+	BUNIMP(F_ASTOTM)		;  "   "    "   time  "   "
+	BUNIMP(F_NVRCCHK)		; compute checksum for NVR
 
-	.SBTTL	"CDP1879 Real Time Clock Calendar Support"
+	.SBTTL	CDP1879 Real Time Clock Calendar Support
 
 ;++
 ;   The time and date routines, GTOD and STOD, operate with a time buffer
@@ -974,83 +1182,40 @@ BIN2B2:	ADI	10		; restore the remainder
 
 
 ;++
-;   The RTCTEST routine returns DF=1 if the RTC chip is installed, and it also
-; returns the "size" of the RTC in D.  "Size" refers to the Elf2K and PicoElf
-; implementations that use a DS12887 as the RTC chip.  In addition to the clock
-; this device features several bytes of general purpose non-volatile RAM, and
-; it is the number of these NVR bytes is returned.
-;
-;   The CDP1879 has no such feature and this routine always returns zero for the
-; size.  In theory that makes sense, however this is the first implementation
-; where the RTC could be present but no NVR.  Hopefully all the code out there
-; can deal with that.
-;
-;CALL:
-;	CALL(F_RTCTEST)
-;	<return DF=1 if CDP1879 installed>
-;--
-RTCTEST:PUSHR(DP)		; we need a register to work with
-	RLDI(DP,HWFLAGS)	; point to the hardware flag bytes
-	LDN	DP		; get the H1 flags
-	ANI	H1.RTC		; is the RTC present??
-	LBZ	RTCTS1		; nope - return DF=0
-	SDF			; RTC installed!
-	LSKP			; skip the CDF
-RTCTS1:	CDF			; no RTC - DF=0
-	IRX\ POPRL(DP)		; restore DP
-RTCRET:	RETURN			; and we're done
-
-
-;++
 ;   GTOD returns the current date and time, in binary as described above.
 ; P1 points to the time buffer, and on return DF=0 if all is well.
 ;
 ;CALL:	RLDI(P1,timbuf)
 ;	CALL(F_GTOD)
-;	<return DF=0 if success>
-;
-;   BTW - that's right, DF=0 for success.  That's the opposite of RTCTEST!
-; And speaking of which, note that this routine DOES NOT CHECK to see whether
-; the CDP1879 is installed!  Call RTCTEST first if you're not sure...
+;	<return DF=1 if no RTC present>
 ;--
-GTOD:	PUSHR(DP)		; save a register to work with
+GTOD:	CALL(F_TESTHWF)		; test the hardware configuration flags
+	 .BYTE	 H1.RTC, 0	;  ... for the RTC
+	LBDF	RTCRET		; branch if no RTC installed
+	PUSHR(DP)		; save a register to work with
 	RLDI(DP,RTCBASE+RTCMON)	; point to the month register
-	LDN	DP		; get that
-	ANI	$7F		; strip off the leap year bit
-	CALL(BCD2BIN)		; convert BCD to binary
-	STR	P1		; and store that in the buffer
-	DEC	DP		; grab the day next
-	LDN	DP		; ...
-	CALL(BCD2BIN)		; ...
-	INC	P1		; ...
-	STR	P1		; put that in the caller's buffer
-	LDI LOW(YEAR)		; fetch the year from our RAMPAGE
-	PLO	DP		; ...
-	LDN	DP		; ...
-	INC	P1		; ...
-	STR	P1		; (this is already in binary!)
-	LDI LOW(RTCBASE+RTCHRS)	; back to the CDP1879 hours register
-	PLO	DP		; ...
-	LDN	DP		; ...
-	ANI	$3F		; remove the 24HR and AM/PM flags
+	LDN DP\ ANI $7F		; strip off the leap year bit
+	CALL(BCD2BIN)\ STR P1	; convert BCD to binary and store
+	DEC DP\ LDN DP		; grab the day next
 	CALL(BCD2BIN)		; convert to binary
-	INC	P1		; ...
-	STR	P1		; and store it in the caller's buffer
-	DEC	DP		; minutes next
-	LDN	DP		; ...
+	INC P1\ STR P1		; and put that in the caller's buffer
+	LDI LOW(YEAR)		; fetch the year from our RAMPAGE
+	PLO DP\ LDN DP		; ...
+	INC P1\ STR P1		; and store (this is already in binary!)
+	LDI LOW(RTCBASE+RTCHRS)	; back to the CDP1879 hours register
+	PLO DP\ LDN DP\ ANI $3F	; remove the 24HR and AM/PM flags
+	CALL(BCD2BIN)		; convert to binary
+	INC P1\ STR P1		; and store it in the caller's buffer
+	DEC DP\ LDN DP		; minutes next
 	CALL(BCD2BIN)		; ...
-	INC	P1		; ...
-	STR	P1		; ...
-	DEC	DP		; and lastly the seconds
-	LDN	DP		; ...
+	INC P1\ STR P1		; ...
+	DEC DP\ LDN DP		; and lastly the seconds
 	CALL(BCD2BIN)		; ...
-	INC	P1		; ...
-	STR	P1		; ...
+	INC P1\ STR P1		; ...
 	DEC	DP		; do a dummy write to RTC location 1
 	STR	DP		;  ... to reset the "freeze" circuit
-	IRX\ POPRL(DP)		; restore DP
-	CDF			; DF=0 for success
-	RETURN			; and we're finally done!
+	IRX\ POPRL(DP)\ CDF	; restore DP and return DF=0 for success
+RTCRET:	RETURN			; and we're finally done!
 
 
 ;++
@@ -1062,7 +1227,7 @@ GTOD:	PUSHR(DP)		; save a register to work with
 ;
 ;CALL:	RLDI(P1,timbuf)
 ;	CALL(F_STOD)
-;	<return DF=0 if success>
+;	<return DF=1 if no RTC present>
 ;
 ;   A couple of final points - the clock is always set to 24 hour mode, and if
 ; the year given is a leap year, then the leap year flag will be set in the
@@ -1070,51 +1235,38 @@ GTOD:	PUSHR(DP)		; save a register to work with
 ; a multiple of 4 - even though only two digits of the year are used, since
 ; 2000 was a leap year everything will work out.
 ;--
-STOD:	PUSHR(DP)		; save a register to work with
+STOD:	CALL(F_TESTHWF)		; test the hardware configuration flags
+	 .BYTE	 H1.RTC, 0	;  ... for the RTC
+	LBDF	RTCRET		; branch if no RTC installed
+	PUSHR(DP)		; save a register to work with
 	RLDI(DP,RTCBASE+RTCCSR)	; first set the CSR just to be safe
 	LDI	RT.O32+RT.STRT	; be sure the clock is running
-	STR	DP		; ...
-	DEC	DP		; point to the month register
-	LDA	P1		; get the month from the caller
-	CALL(BIN2BCD)		; convert to BCD
+	STR DP\ DEC DP		; point to the month register
+	LDA P1\ CALL(BIN2BCD)	; get the month from the caller
 	STR	DP		; and store that in the clock
-	LDA	P1		; get the day next
-	CALL(BIN2BCD)		; ...
-	DEC	DP		; ...
-	STR	DP		; ...
+	LDA P1\ CALL(BIN2BCD)	; get the day next
+	DEC DP\ STR DP		; ...
 	LDI LOW(YEAR)		; point to the year in RAMPAGE
-	PLO	DP		; ...
-	LDA	P1		; get that from the caller
-	STR	DP		; and save it
-	ANI	3		; is this a leap year??
-	LBNZ	STOD1		; branch if not
+	PLO DP\ LDA P1\ STR DP	; get that from the caller and save it
+	ANI 3\ LBNZ STOD1	; branch if not a leap year
 	LDI LOW(RTCBASE+RTCMON)	; yes
-	PLO	DP		; ...
-	LDI	RT.LPY		; set the leap year bit
-	SEX	DP		; ...
-	OR			; ...
-	STR	DP		; in the month register
+	PLO DP\ LDI RT.LPY	; set the leap year bit
+	SEX DP\ OR\ STR DP	; ... in the month register
 STOD1:	LDI LOW(RTCBASE+RTCHRS)	; the hours register is next
-	PLO	DP		; ...
-	LDA	P1		; ...
+	PLO DP\ LDA P1		; ...
 	CALL(BIN2BCD)		; ...
 ;;	ORI	RT.12H		; select 12 hour mode
 	STR	DP		; ...
-	LDA	P1		; minutes
-	CALL(BIN2BCD)		; ...
-	DEC	DP		; ...
-	STR	DP		; ...
-	LDN	P1		; and the seconds
-	CALL(BIN2BCD)		; ...
-	DEC	DP		; ...
-	STR	DP		; ...
+	LDA P1\ CALL(BIN2BCD)	; minutes
+	DEC DP\ STR DP		; ...
+	LDN P1\ CALL(BIN2BCD)	; and the seconds
+	DEC DP\ STR DP		; ...
 	DEC	DP		; write to RTC address 1
 	STR	DP		;  ... to release the "freeze" circuit
-	IRX\ POPRL(DP)		; restore DP
-	CDF			; DF=0 for success
+	IRX\ POPRL(DP)\ CDF	; restore DP and return DF=0 for success
 	RETURN			; and we're done!
 
-	.SBTTL	"Read/Write IDE/ATA Disk Drive Sectors"
+	.SBTTL	Read/Write IDE/ATA Disk Drive Sectors
 
 ;++
 ;   This routine writes one sector (always exactly 512 bytes) to either the
@@ -1133,17 +1285,16 @@ STOD1:	LDI LOW(RTCBASE+RTCHRS)	; the hours register is next
 ;--
 DISKWR:	GHI	T2		; select the correct drive
 	CALL(DRVSEL)		; and wait for it to be ready
-	LBDF	DRVER1		; quit now if error
+	LBDF	DSKRET		; quit now if error
 	CALL(SETLBA)		; set up the LBA registers
 	WRIDE(IDECMD,ID_WRS)	; issue write sectors command
 	CALL(WDRQ)		; wait for the drive to ask for data
-	LBDF	DRVER1		; give up if error
+	LBDF	DSKRET		; give up if error
 	PUSHR(P3)		; save a temporary register
 	RLDI(P3,DSKBSZ)		; transfer 512 bytes of data
 	OUTI(IDESEL,IDEDATA)	; select the drive data register
 	SEX	SP		; be sure the stack is addressed
-DISKW1:	LDA	P1		; get a byte from the buffer
-	STR	SP		; put it on the TOS
+DISKW1:	LDA P1\ STR SP		; get buffer byte and put it on the TOS
 	OUT IDEBUF\ DEC SP	; and send it to the drive
 	DBNZ(P3,DISKW1)		; loop until we've done 512 bytes
 	IRX\ POPRL(P3)		; restore P3
@@ -1167,27 +1318,33 @@ DISKW1:	LDA	P1		; get a byte from the buffer
 ;--
 DISKRD:	GHI	T2		; select the correct drive
 	CALL(DRVSEL)		; and wait for it to be ready
-	LBDF	DRVER1		; quit now if error
+	LBDF	DSKRET		; quit now if error
 	CALL(SETLBA)		; set up the LBA registers
 	WRIDE(IDECMD,ID_RDS)	; issue read sectors command
 	CALL(WDRQ)		; wait for the drive to ask for data
-	LBDF	DRVER1		; give up if error
+	LBDF	DSKRET		; give up if error
 	PUSHR(P3)		; save a temporary register
 	RLDI(P3,DSKBSZ)		; transfer 512 bytes of data
 	OUTI(IDESEL,IDEDATA)	; select the drive data register
-	SEX	SP		; be sure the stack is addressed
-DISKR1:	INP	IDEBUF		; read a byte from the drive
-	STR	P1		; and store it in the caller's buffer
-	INC	P1		; ...
+	SEX	P1		; address the caller's buffer
+DISKR1:	INP IDEBUF\ INC P1	; read from the drive and put it in the buffer
 	DBNZ(P3,DISKR1)		; loop for all 512 bytes
-	IRX\ POPRL(P3)		; restore P3
+	SEX SP\ IRX\ POPRL(P3)	; restore P3
 	LBR	WREADY		; wait for ready or just return???
 
-	.SBTTL	"Set IDE/ATA Disk LBA"
+	.SBTTL	Set IDE/ATA Disk LBA
 
 ;++
 ;   This routine will load the four drive LBA registers using the values in
 ; the T1 and T2 registers.  It can't really fail and has no error return.
+;
+;CALL:
+;	T1   - LBA (low  16 bits)
+;	T2   - LBA (high 12 bits)
+;	CALL(DISKRD)
+;
+;   Note that this routine DOES NOT select the IDE drive, and the drive select
+; bits in the upper part of T2 are ignored.
 ;--
 SETLBA:	OUTI(IDESEL,IDELBA0)	; select the LBA0 register
 	GLO	T1		; and T1.0 contains the LSB LBA 
@@ -1201,64 +1358,60 @@ SETLBA:	OUTI(IDESEL,IDELBA0)	; select the LBA0 register
 	GLO	T2		; ...
 	STR SP\ SEX SP		; ...
 	OUT IDEBUF\ DEC SP	; ...
-	OUTI(IDESEL,IDELBA3)	; but for the fourth byte we have to be
-	GHI T2\ ORI ID.LBA	;  ... always set the LBA bits
-	STR SP\ SEX SP		; ...
-	OUT IDEBUF\ DEC SP	; ...
+	OUTI(IDESEL,IDELBA3)	; for the LBA3 register read back ...
+	SEX SP\ INP IDEBUF	;  ... the current drive select bits
+	ANI $F0\ STR SP		;  save just those
+	GHI T2\ ANI $0F		; get the upper 4 bits of the LBA
+	OR\ STR SP		; combine with the drive select
+	OUT IDEBUF\ DEC SP	; and update LBA3
 	WRIDE(IDESCT,1)		; always set the sector count to 1
 	RETURN			; and all done
 
-	.SBTTL	"Wait for IDE/ATA Disk Ready"
+	.SBTTL	Wait for IDE/ATA Disk Ready
 
 ;++
 ;   Wait for the disk drive to become ready after some operation.  This routine
 ; continuously polls the drive status register waiting for the BUSY bit to be
-; clear and the READY bit to be set.  There is a timeout, and if the drive
-; doesn't finish whatever it's doing in 5 seconds then we return with DF=1.
+; clear and the READY bit to be set.  If we detect the ERROR bit while we're
+; waiting, then we take the error return.
 ;
 ;CALL:
 ;	CALL(WREADY)
 ;	<if error return with DF=1 and error register in D>
-;	<if no error return with DF=0 and status register in D>
+;	<if no error return with DF=0>
 ;
-;   Note that the whole ready loop thing takes about 24 machine cycles or 192
-; clocks.  The timeout is 65,536 iterations which, at 2.5MHz, is almost exactly
-; five seconds.
+;  FWIW, if the BUSY set it means that the drive has control over the registers
+; and the host should not read or write them. The registers are not dual-ported,
+; so either the host has access to them or the drive does but never both, and
+; BUSY indicates which.  The exception is is the status register, which the
+; host is allowed to read even when BUSY is set.
 ;
-;   WARNING!  This routine DOES NOT select the I/O group!  Given that it's
-; usually called after issuing some drive command, we assume that's already
-; done.
+;   BUSY does not necessarily imply the drive is active, but the READY bit 
+; indicates the drive is idle and ready to receive a command.  The caveat is
+; that you can't check the READY bit until BUSY is clear.
+;
+;   Note that there is no timeout here.  We assume that if the drive was
+; online during the POST then it's online now!
 ;--
 WREADY:	OUTI(IDESEL,$00)	; don't know why we need this, but we do!
 	OUTI(IDESEL,IDESTS)	; select the drive status register
-	SEX SP\ PUSHR(P3)	; save P3 ...
-	RCLR(P3)		;  ... and keep the timeout counter there
-WRDY1:	DEC	P3		; decrement the timeout
-	GLO	P3		; has it rolled over to zero yet?
-	LBNZ	WRDY2		; no
-	GHI	P3		; ...
-	LBZ	DRVER0		; timeout - give the error return
-WRDY2:	SEX SP\ INP IDEBUF	; read the drive's status register
+WRDY1:	SEX SP\ INP IDEBUF	; read the drive's status register
 	ANI	ID.ERR		; check the error bit first
-	LBNZ	DRVER0		; take the error return if set
+	LBNZ	DRVERR		; take the error return if set
 	LDN	SP		; get the status back
 	ANI	ID.BSY+ID.RDY	; check the BUSY and READY bits
 	XRI	ID.RDY		; want READY set and BUSY clear
 	LBNZ	WRDY1		; keep waiting if not
-	IRX\ POPRL(P3)		; restore P3
-	INP	IDEBUF		; read the status register once more
-	CDF			; return DF=0 and the status in D
-	RETURN			; ...
+	CDF\ RETURN		; return DF=0 for success
 
 
 ;   This routine is branched to in the event of an IDE error.  It will read and
 ; return the IDE error register in D, and also set DF=1 ...
-DRVER0:	IRX\ POPRL(P3)		; restore P3 for WREADY
 DRVERR:	RDIDE(IDEERR)		; read the IDE error register
-DRVER1:	SDF			; return DF=1
-	RETURN			; and back to the original caller
+	SDF			; return DF=1
+DSKRET:	RETURN			; and back to the original caller
 
-	.SBTTL	"Wait for IDE/ATA Data Request"
+	.SBTTL	Wait for IDE/ATA Data Request
 
 ;++
 ;   This routine will wait for the DRQ bit to set in the drive status register.
@@ -1283,10 +1436,9 @@ WDRQ:	RDIDE(IDESTS)		; read the drive status register
 	LDN	SP		; check the status one more time
 	ANI	ID.DRQ		; data transfer request?
 	LBZ	WDRQ		; not yet - keep waiting
-	CDF			; success!
-	RETURN			; return DF=0
+	CDF\ RETURN		; success - return DF=0
 
-	.SBTTL	"Select IDE/ATA Master or Slave"
+	.SBTTL	Select IDE/ATA Master or Slave
 
 ;++
 ;   This routine selects either the master or the slave drive depending the
@@ -1297,242 +1449,54 @@ WDRQ:	RDIDE(IDESTS)		; read the drive status register
 ; so it sets the LBA and the two unused bits as well, but but we don't take
 ; that for granted and always OR the value with $E0 regardless.
 ;
-;   Note that the BIOS calls for F_IDEID and F_IDESIZE calls use an entirely
-; different system and instead pass a parameter in P2.0 which is 0 to select
-; the master and 1 to select the slave. (Don't blame me - I didn't write it!)
-; Those calls go thru IDDCMD however, and don't call this routine.
-;
 ;CALL:
 ;	LDI <$00 to select the MASTER; $10 to select the SLAVE>
 ;	CALL(DRVSEL)
-;	<if error return with DF=1 and error register in D>
-;	<if no error return with DF=0 and status register in D>
+;	<if error return with DF=1>
+;	<if no error return with DF=0>
+;
+;   Note that the first thing we do is to check the HWFLAGS to see whether the
+; selected drive was actually detected by the POST.  If it wasn't then we take
+; the error return immediately.  Also note that there are no timeouts here.
+; IDE drives and CF cards are not hot swappable and we just assume that if the
+; drive was present and working for the POST then it's still there now.
 ;--
-DRVSEL:	OUTI(GROUP,BASEGRP)	; be sure the base board I/O group is selected
+DRVSEL:	ANI $10\ PUSHD		; save the master/slave bit
+	LBNZ	DRVSE1		; was the IDE slave selected?
+	CALL(TESTHW)		; is the IDE master installed?
+	 .BYTE	 H1.IDE0, 0	; ...
+	LBDF	DRVSE9		; no - just give up now
+	LBR	DRVSE2		; yes - go select it
+DRVSE1:	CALL(TESTHW)		; is the IDE slave installedd?
+	 .BYTE	H1.IDE1, 0	; ...
+	LBDF	DRVSE9		; no - give up now
+
+; Wait for the IDE to be not busy and then select the correct drive .
+DRVSE2:	OUTI(GROUP,BASEGRP)	; be sure the base board I/O group is selected
+	OUTI(IDESEL,IDESTS)	; select the drive status register
+DRVS20:	SEX SP\ INP IDEBUF	; read the drive status register
+	ANI ID.BSY\ LBNZ DRVS20	; and loop until BUSY is clear	
+
+; Ok, finally we can write the drive select bit!
 	OUTI(IDESEL,IDELBA3)	; LBA3 has the drive select bit
-	ANI	$F0		; clear out any address bits for now
-	ORI	ID.LBA		; always select LBA mode
-	STR SP\ SEX SP		; put that on the TOS temporarily
+	SEX SP\ POPD		; get the drive select back
+	ORI ID.LBA\ STR SP	; always select LBA mode
 	OUT IDEBUF\ DEC SP	; and write the drive's LBA3 register
-	LBR	WREADY		; wait for the drive to be ready and we're done
 
-	.SBTTL	"IDE/ATA Disk Initialization"
+; Now wait again for BUSY clear and READY set ...
+	OUTI(IDESEL,IDESTS)	; select the drive status register
+DRVSE3:	SEX SP\ INP IDEBUF	; read the status register
+	ANI	ID.BSY|ID.RDY	; test the BUSY and READY bits
+	XRI	ID.RDY		; and wait for BUSY=0 and READY=1
+	LBNZ	DRVSE3		; ...
+	CDF\ RETURN		; all done - return DF=0 for success
 
-;++
-;   This routine will do a soft reset for BOTH drives (the reset bit always 
-; affects both drives - there's no way to do just one).  After resetting it will
-; select the master drive and wait for it to become ready.  Once the master is
-; ready it will try to set BOTH drives, master and slave, to 8 bit mode.  If
-; there are any errors while waiting for the drive or executing the SET FEATURES
-; command then we will return with DF=1 and the master drive's error register
-; in D.
-;
-; BTW, most most "real" drives don't support 8 bit mode but all CF cards do!
-;
-;CALL:
-;	CALL(DRVRST)
-;	<if error return with DF=1 and error register in D>
-;	<if no error return with DF=0 and status register in D>
-;
-;   Fair warning - the soft reset bit in the drive control register DOESN'T
-; self clear.  You have write a 1, wait a bit, and then clear it.  It's not
-; obvious from the ATA spec how long you should leave the reset bit set, but
-; 2ms seems like plenty.
-;
-;   Another problem to think about - if there are two drives, then the software
-; reset affects BOTH drives.  That means we need to set BOTH drives to 8 bit
-; mode, but there may or may not be a slave and we don't have any easy way to
-; know if one exists.  Ideally we need to wait for the slave to go ready before
-; we send it the 8bit mode command, but if the slave doesn't exist and we call
-; WREADY anyway that means a painfully long five second timeout.
-;
-;   The compromise we pick is to 1) wait for the master to be ready, set it to
-; 8 bit mode, and then wait for that to finish.  Assuming the master exists and
-; successfully completes these operations, then we blindly issue an 8bit mode
-; command to the slave but we DON'T wait for it to finish.  If the slave doesn't
-; exist then this is harmless, and if the slave does exist then we'll wait for
-; it to be ready when ever we issue the next command.
-;--
-DRVRST:	OUTI(GROUP,BASEGRP)	; be sure the base board I/O group is selected
-	WRIDE(IDECTL,ID.RST)	; set the soft reset bit 
-	DLY2MS			; wait a while
-	OUTI(IDEBUF,ID.NIE)	; clear reset, disable interrupts
-	LDI 0\ CALL(DRVSEL)	; wait for the master to be READY
-	LBDF	DRVER1		; quit now if the master doesn't exist
-	WRIDE(IDEFEA,ID_8BT)	; select 8 bit mode
-	WRIDE(IDECMD,ID_FEA)	; and execute the SET FEATURES command
-	CALL(WREADY)		; wait for the drive to finish
-	LBDF	DRVER1		; quit if the master doesn't work
-	WRIDE(IDELBA3,ID.SLV)	; try to select the slave drive
-	WRIDE(IDEFEA,ID_8BT)	; and tell it to use 8 bit mode too
-	WRIDE(IDECMD,ID_FEA)	; (but don't wait for it)
-	CDF			; return DF=0 for success
-	RETURN			; ...
-
-	.SBTTL	"IDE/ATA Disk Identification"
-
-;++
-;   This routine will send an IDENTIFY DEVICE command to the IDE drive and then
-; extract and return the manufacturer's name and model number.  This data is an
-; ASCIZ string and will be stored in the caller's buffer pointed to by P1. It's
-; essentially just a special case of the DISKRD routine and, as with all the
-; disk functions, P2.0 selects the master or slave drive, and on return DF=1
-; if there was any kind of error.
-;
-;CALL:
-;	P1   - address of string buffer
-;	T2.1 - drive select (0xE0=MASTER, 0xF0=SLAVE)
-;	CALL(DISKID)
-;	<if error return with DF=1 and error register in D>
-;
-;   Note that we have to swap character pairs here - I think that's because the
-; drive believes that it's returning words, but since the interface is set to
-; 8 bits it returns the low order byte first, then the high byte.  This causes
-; every pair of characters to be swapped ...
-;--
-DISKID:	PUSHR(P3)		; save P3 for counting
-	CALL(IDDCMD)		; send the IDENTIFY DEVICE command
-	 .WORD	 ID_MOD		; skip bytes until the model string
-	LBDF	DISKI2		; quit if error
-	RLDI(P3,ID_MDL)		; copy the entire model name string
-DISKI1:	INP	IDEBUF		; read another data byte
-	DEC	SP		; protect it on the stack
-	INP	IDEBUF		; then read the second of the pair
-	STR P1\ INC P1		; put it in the buffer
-	INC	SP		; back to the first byte now
-	LDN	SP		; ...
-	STR P1\ INC P1		; and store that second
-	DEC	P3		; we just did two bytes
-	DBNZ(P3,DISKI1)		; loop for the entire string
-	LDI	0		; make sure the string is null terminated
-	STR	P1		; ...
-	CALL(IDDFLS)		; flush the rest of the data
-	CDF			; return DF=0 for success
-DISKI2:	IRX\ POPRL(P3)		; restore P3
+; Here if the drive isn't online ...
+DRVSE9:	SEX SP\ IRX		; remove the unit number from the stack
+DRVS99:	LDI $FF\ SDF		; return D=$FF and DF=1 for failure
 	RETURN			; and we're done
 
-	.SBTTL	"IDE/ATA Disk Size"
-
-;++
-;   This routine will return the size of the attached disk drive in both
-; megabytes and disk sectors.  Like DISKID it works by sending an ATA IDENTIFY
-; DEVICE command to the drive and then extracting the information from the
-; result.  If there's an error or no drive is attached, it will return DF=0 and
-; a size of zero.
-;
-;CALL:
-;	T2.1 - drive select (0xE0=MASTER, 0xF0=SLAVE)
-;	CALL(DISKID)
-;	<if error return with DF=1 and error register in D>
-;	<if no error return DF=0 and size in P1, T2 and T1>
-;
-;   On return, P1 will contain the drive size in megabytes, and T1/T2 will
-; contain the total number of sectors  (T1 is the low order 16 bits and T2 is
-; the high order 12 bits).  These two things represent the same result - it's
-; up to the caller to decide which form is more useful.
-;
-;   To get the size in MB we simply divide the number of sectors by 2048 (which
-; is conveniently done by shifting T1/T2 right by 11 bits).  Since P1 is only
-; 16 bits this limits the maximum size of our drive to 65GB, which seems like
-; plenty for an Elf.  If you're worried, you can always use the T1/T2 value
-; instead.
-;--
-DISKSZ:	PUSHR(P3)		; save P3 for counting
-	RCLR(P1)		; return zero in case of any error
-	CALL(IDDCMD)		; send the IDENTIFY DEVICE command
-	 .WORD	 ID_LBA		; skip bytes until the disk capacity
-	LBDF	DISKS2		; quit if error
-	INP IDEBUF\ PLO T1	; the next 4 bytes are the total
-	INP IDEBUF\ PHI T1	;  ... number of sectors
-	INP IDEBUF\ PLO T2	;  ...
-	INP IDEBUF\ PHI T2	;  ...
-	GHI T1\ PLO P1		; throw away the LSB
-	GLO T2\ PHI P1		;  ... and copy 16 bits to P1
-	GHI T2\ PHI P3		; put the last 4 bits in P3.1
-	LDI	3		; shift right 3 more bits
-	PLO	P3		; ...
-DISKS1:	GHI	P3		; start with the MSB
-	SHR			; and shift that
-	PHI	P3		; ...
-	RSHRC(P1)		; shift a bit into P1
-	DEC	P3		; have we done this 3 times?
-	GLO	P3		; ??
-	LBNZ	DISKS1		; no - keep looping
-	CALL(IDDFLS)		; flush the rest of the data
-	CDF			; and return DF=0 for success!
-DISKS2:	IRX\ POPRL(P3)		; restore P3
-	RETURN			; and we're done
-
-	.SBTTL	"IDE/ATA Identify Device"
-
-;++
-;   This routine actually sends the IDENTIFY DEVICE command to the drive and
-; waits for the response.  It then reads and ignores the specified number of
-; bytes, and returns.  It's shared by both the DISKID and DISKSZ routines.
-;
-;CALL:
-;	T2.1 - drive select (0xE0=MASTER, 0xF0=SLAVE)
-;	CALL(IDDCMD)
-;	.WORD	<count of bytes to ignore>
-;	<if error return with DF=1 and error register in D>
-;
-;   According to the ATA specification, the sector count and LBA registers, with
-; the exception of LBA3, are supposed to be zero before issuing this command.
-; I hate to do that because it wastes a lot of space and I don't think it's
-; necessary, but we will be compliant.  The LBA3 register should contain the
-; desired master/slave selection.
-;
-;   More importantly, this function is one way we can determine whether a slave
-; drive actually exists or not.  If we issue the IDENTIFY DEVICE command and
-; then immediately read the drive status register, we should see at least BUSY,
-; DRQ, or maybe ERROR set.  If we read zeros, with the possible exception of
-; INDEX, then we know the drive doesn't exist.  This is not an accident - the
-; master drive, which knows if a slave is present, explicitly drives the bus
-; with zeros in this instance (see the ATA-3 spec, ca 1997, section 8.7).
-; In this event we take the error return with DF=1 and D=0.
-;
-;   Lastly, notice that this routine doesn't call DRVSEL.  That routine will
-; wait for the drive to be ready, and if we're testing a non-existent slave
-; drive then we'd have to spin thru the entire WREADY timeout process.  Don't
-; want to do that!
-;--
-IDDCMD:	OUTI(GROUP,BASEGRP)	; be sure the base board I/O group is selected
-	OUTI(IDESEL,IDELBA3)	; then select register LBA3
-	RLDA(P3,A)		; pick up the number of bytes to skip
-	GHI	T2		; get the desired unit
-	ORI	ID.MST		; set the other magic bits
-	STR SP\ SEX SP		; put that on the TOS
-	OUT IDEBUF\ DEC SP	; and write the drive's LBA3 register
-	WRIDE(IDESCT,0)		; set the sector count
-	WRIDE(IDELBA0,0)	;  ... LBA0
-	WRIDE(IDELBA1,0)	;  ... LBA1
-	WRIDE(IDELBA2,0)	;  ... and LBA 2 registers to zero
-	WRIDE(IDECMD,ID_IDD)	; finally, send the IDENTIFY DEVICE command
-	RDIDE(IDESTS)		; read the status register
-	ANI	~ID.IDX		; ignore the INDEX flag
-	LBZ	DRVER1		; and there's no drive if we find zero
-	CALL(WDRQ)		; there's a real drive - wait for data
-	LBDF	DRVERR		; ... shouldn't get an error here, but ...
-	OUTI(IDESEL,IDEDATA)	; select the drive data register
-	SEX	SP		; and direct INP to the TOS
-IDDCM1:	INP	IDEBUF		; read a byte from the drive
-	DBNZ(P3,IDDCM1)		; loop until we've skipped enough
-	RETURN			; let the caller handle the rest
-
-
-;++
-;   This routine will flush any remaining data from the disk drive.  It simply
-; keeps reading bytes until the DRQ flag is no longer set, and then it waits
-; for the drive to go READY again.
-;--
-IDDFLS:	RDIDE(IDESTS)		; read the drive status
-	ANI	ID.DRQ		; is DRQ still set?
-	LBZ	WREADY		; no - wait for READY and return
-	OUTI(IDESEL,IDEDATA)	; select the data port
-	SEX SP\ INP IDEBUF	; read a byte from the drive
-	LBR	IDDFLS		; and keep flushing
-
-	.SBTTL	"Read TU58 Tape Records"
+	.SBTTL	Read TU58 Tape Records
 
 ;++
 ;   This routine will read exactly one sector, 512 bytes, from the TU58 drive.
@@ -1551,9 +1515,11 @@ IDDFLS:	RDIDE(IDESTS)		; read the drive status
 ;	<return with DF=0 if successful>
 ;
 ;   Note that the ElfOS BIOS API allows for 32 bit mass storage block numbers,
-; but RSP only allows for 16 bits, so T2 is simply ignored.  Also note that,
-; in keeping with the BIOS API, we always read exactly one block, and never
-; more or less.
+; but RSP only allows for 16 bits, so T2 is almost ignored.  "Almost" because
+; MiniDOS' format program attempts to discover the size of a drive by trying 
+; to read non-existent blocks.  Because of that we have to check T2 for all
+; zeros and take the error return if it isn't.  Also note that, in keeping
+; with the BIOS API, we always read exactly one block, and never more or less.
 ;
 ; BTW, you should be sure to call TUINIT before calling this routine!
 ;
@@ -1568,13 +1534,11 @@ IDDFLS:	RDIDE(IDESTS)		; read the drive status
 ;   ElfOS pretty much depends on us not destroying any registers on return,
 ; and that includes the parameters we're called with.  The only exception
 ; seems to be P1, which points to the buffer and gets incremented on
-; return by the number of bytes we read.  We cheat a little with T2 - since
-; RSP only allows 16 bit sector numbers, T2 must be zero when we're called.
-; We always zero it on return, but don't actually bother saving it.
+; return by the number of bytes we read.
 ;
 ; REGISTERS USED
 ; T1 contains the block/sector number and is preserved on return
-; T2 is used by TUGET for the timeout and is zeroed on return
+; T2 is used by TUGET for the timeout and is preserved on return
 ; P1 is used as a pointer to the data buffer and on return P1 points to
 ;      the next byte AFTER the buffer end!
 ; P2 is used as a transfer counter, and also by TUREND, and is preserved
@@ -1582,7 +1546,10 @@ IDDFLS:	RDIDE(IDESTS)		; read the drive status
 ;--
 TUREAD:	PLO	BAUD		; save the unit number for a moment
 	PUSHR(P2)\ PUSHR(DP)	; save temporary registers we use
-	RLDI(P2,DSKBSZ)		; read always transfers 512 bytes
+	PUSHR(T2)		; ...
+	GHI T2\ LBNZ TURD52	; T2 must be zero
+	GLO T2\ LBNZ TURD52	; ...
+	RLDI(P2,DSKBSZ)		; alway transfers 512 bytes
 	GLO	BAUD		; restore the unit number
 	CALL(TUXCMD)		; transmit a control/command packet
 	 .BYTE	 TUCRDD		;  ... read data from tape
@@ -1592,8 +1559,13 @@ TURD10:	CALL(TUCLSM)		; clear the checksum accumulator
 	CALL(TUGETC)		; read the next byte
 	LBDF	TURD50		; branch if timeout
 	SMI	TUPDAT		; is this a DATA packet?
-	LBNZ	TURD50		; no - error
-	CALL(TUGETC)		; get the length byte
+	LBZ	TURD11		; yes - read the packet length next 
+	ADI	TUPDAT		; no - restore what we read
+	CALL(TUREN1)		; and check for an END packet with an error
+	LBR	TURD51		; return the error from the END packet
+
+; Read the packet length next ...
+TURD11:	CALL(TUGETC)		; get the length byte
 	LBDF	TURD50		; timeout
 	SMI	TUPKSZ		; the packet size must be 128 bytes
 	LBNZ	TURD50		;  ... error if it isn't
@@ -1613,16 +1585,17 @@ TURD20:	CALL(TUGETC)		; get another data byte
 
 ; End of transfer - check for an END packet ...
 TURD40:	CALL(TUREND)		; try to read an END packet
-	LSKP			; and fall into TURD51
+	LBR	TURD51		; and fall into TURD51
 
 ; Here for any error - return DF=1
+TURD52:	LDI	LOW(TUEBLK)	; return "invalid block number"
 TURD50:	SDF			; checksum bad (or some other) error
-TURD51:	PLO	BAUD		; save the error code for later
-	IRX\ POPR(DP)\ POPRL(P2); restore registers
-	RCLR(T2)		; always return T2=0
+TURD51:	PLO BAUD\ IRX		; save the error code for later
+	POPR(T2)\ POPR(DP)	; restore registers
+	POPRL(P2)		; ...
 	GLO BAUD\ RETURN	; and we're done!
 
-	.SBTTL	"Write TU58 Tape Data Records"
+	.SBTTL	Write TU58 Tape Data Records
 
 ;++
 ;   This routine will write exactly one 512 byte data record to the TU58 drive.
@@ -1642,6 +1615,9 @@ TURD51:	PLO	BAUD		; save the error code for later
 ;--
 TUWRITE:PLO	BAUD		; save the unit number for a moment
 	PUSHR(P2)\ PUSHR(DP)	; save temporary registers we use
+	PUSHR(T2)		; ...
+	GHI T2\ LBNZ TURD52	; T2 must be zero
+	GLO T2\ LBNZ TURD52	; ...
 	RLDI(P2,DSKBSZ)		; write always transfers 512 bytes
 	GLO	BAUD		; restore the unit
 	CALL(TUXCMD)		; transmit a control/command packet
@@ -1651,10 +1627,13 @@ TUWRITE:PLO	BAUD		; save the unit number for a moment
 TUWR10:	CALL(TUGETC)		; read the next byte
 	LBDF	TURD50		; branch if timeout
 	SMI	TUPCON		; expect the TU58 to send a CONTINUE
-	LBNZ	TURD50		; no - that's an error
+	LBZ	TUWR11		; yes - go send a data packet
+	ADI	TUPCON		; otherwise restore what we read
+	CALL(TUREN1)		; and look for an END packet with an error
+	LBR	TURD51		; return the error code from the END and quit
 
 ; Send a data packet to the TU58 ...
-	CALL(TUCLSM)		; clear the checksum accumulator
+TUWR11:	CALL(TUCLSM)		; clear the checksum accumulator
 	LDI	TUPDAT		; send the data packet flag
 	CALL(TUPUTC)		; ...
 	LDI	TUPKSZ		; we always send 128 bytes
@@ -1674,7 +1653,7 @@ TUWR30:	CALL(TUTXSM)		; transmit the checksum
 ; No more bytes to send - read an END packet from the TU58 ...
 	LBR	TURD40		; after that we're done!
 
-	.SBTTL	"Send TU58 Command Packet"
+	.SBTTL	Send TU58 Command Packet
 
 ;++
 ;   This routine will send a command packet (i.e. one where the flag byte is
@@ -1708,7 +1687,7 @@ TUXCMD:	PUSHD			; save the unit number for later
 	GHI T1    \ CALL(TUPUTC); ...
 	LBR	TUTXSM		; and lastly send the checksum
 
-	.SBTTL	"Receive TU58 END Packet"
+	.SBTTL	Receive TU58 END Packet
 
 ;++
 ;   This routine will attempt to receive a control/command packet with the
@@ -1768,7 +1747,7 @@ TUREN3:	CALL(TUGETC)		; read a byte
 TUREN2:	SDF \ LDI $FF		; return DF=1 and error code FF
 	RETURN			; ...
 
-	.SBTTL	"Initialize TU58 Tape"
+	.SBTTL	Initialize TU58 Tape
 
 ;++
 ;   This routine will initialize any TU58 drive attached to the secondary serial
@@ -1787,15 +1766,17 @@ TUREN2:	SDF \ LDI $FF		; return DF=1 and error code FF
 ; is called, we'll stick with.
 ;--
 TUINIT:	PUSHR(T2)		; save T2 (used by TUGET!)
-	RLDI(T2,HWFLAGS+1)	; see if SLU1 is even installed
-	LDN T2\ ANI H0.SLU1	; is SLU1 present?
-	LBZ	TUINI5		; no - give the error return
+	CALL(F_TESTHWF)		; see if SLU1 is even present?
+	 .BYTE	 H0.SLU1, 0	; ...
+	LBDF	TUINI5		; no - just quit now
+	GHI BAUD\ ANI BD.ALT	; is the alternate console in use?
+	LBNZ	TUINI5		; yes - that uses SLU1 so no TU58!
 	OUTI(GROUP,SL1GRP)	; be sure the SLU1 I/O group is selected
 	LDI  8\ PHI P1		; retry 8 times before giving up
-	RLDI(T2,SL1FMT)		; saved character format for SLU1
 
 ; Send a BREAK to the TU58 ...
-TUINI1:	LDN T2\ ORI SL.BRK	; set the force break bit
+TUINI1:	RLDI(T2,SL1FMT)		; saved character format for SLU1
+	LDN T2\ ORI SL.BRK	; set the force break bit
 	STR SP\ SEX SP		; ...
 	OUT SL1CTL\ DEC SP	; write the SLU1 control register
 	CALL(DLY100)		; delay for 100ms
@@ -1813,8 +1794,8 @@ TUINI1:	LDN T2\ ORI SL.BRK	; set the force break bit
 ;   Send not one but two INIT packets.  Note that the INIT packets are just a
 ; single byte.  There is no checksum, nothing, else.
 	LDI	TUPINI		; send two <INIT> flag bytes
-	CALL(TUPUT)		; ...
-	CALL(TUPUT)		; ...
+	CALL(SL1OUT)		; ...
+	CALL(SL1OUT)		; ...
 
 ;   If our friend the TU58 is alive and well, it should send a CONTINUE packet
 ; as the response.  If we get that now, then great.  If we timeout, then there's
@@ -1836,7 +1817,18 @@ TUINI6:	CDF			; return DF=0 for success
 	SEX SP\ IRX\ POPRL(T2)	; restore T2
 	RETURN			; and we're done for now
 
-	.SBTTL	"TU58 Input Primitives"
+;++
+;   This little routine delays for 100ms, assuming the 2.5MHz clock speed.
+; It's used by the TU58 and IDE code, and got stuck here because of space
+; limitations in the BIOS sections where those functions reside.
+;--
+DLY100:	LDI 100 \ PLO P1	; call DLY1MS 100 times
+DLY101:	DLY1MS			; spin for 1ms 
+	DEC P1 \ GLO P1		; have we waited for 100ms?
+	LBNZ	DLY101		; no - keep going
+	RETURN			; all done
+
+	.SBTTL	TU58 I/O Primitives
 
 ;++
 ;   This routine reads (or at least it tries to) one character from the TU58
@@ -1859,8 +1851,12 @@ TUINI6:	CDF			; return DF=0 for success
 ; This assumes that the SLU1 I/O group is already selected!!!
 ;
 ; Uses T2 for the timeout counter!
+;
+;   This probably could be rewritten to use SL1HIT and SL1IN, but we'd still
+; need to add the time out and it's not clear that's worth the effort.
 ;--
 TUGET:	RLDI(T2,TUTIMO)		; this is the timeout loop counter
+	OUTI(GROUP,SL1GRP)	; select the SLU1 I/O group
 TUGET1:	INP	SL1STS		; [4] have we received anything?
 	SHR			; [2] put the DA bit in the DF
 	LBNF	TUGET2		; [3] nope - check for timeout
@@ -1890,10 +1886,9 @@ TUGETC:	CALL(TUGET)		; first get something
 	CDF			; return DF=0 and data in D
 TUGET3:	RETURN			; and we're done
 
-	.SBTTL	"TU58 Output Primitives"
 
 ;++
-; This routine calls TUPUTC and also updates the running TU58 checksum.
+; This routine calls SL1OUT and also updates the running TU58 checksum.
 ;
 ;	<character to transmit in D>
 ;	CALL(TUPUTC)
@@ -1902,28 +1897,9 @@ TUGET3:	RETURN			; and we're done
 ; the side effect of updating the checksum.
 ;--
 TUPUTC:	CALL(TUADSM)		; update the checksum
-				; and fall into TUPUT ...
+	LBR	SL1OUT		; and fall into SL1OUT ...
 
-;++
-;   This routine writes a byte to the TU58 serial port.  It's the complement to
-; TUGET but this one's simpler because there's no timeout here.  Like TUGET,
-; this DOES NOT update the TU58 checksum.  Call TUPUTC instead if you want that.
-;
-;	<character to transmit in D>
-;	CALL(TUPUT)
-;
-; This assumes that the SLU1 I/O group is already selected!!!
-;--
-TUPUT:	PUSHD			; save the byte to transmit
-TUPUT1:	INP	SL1STS		; is the transmitter ready?
-	SHL			; check the THRE bit
-	LBNF	TUPUT1		; not set - wait for it
-	IRX			; point to the byte to send
-	OUT	SL1BUF		; and transmit it
-	DEC SP\ LDN SP		; fix the stack and restore D
-	RETURN			; and we're done
-
-	.SBTTL	"TU58 Checksum Utilities"
+	.SBTTL	TU58 Checksum Utilities
 
 ;++
 ;   Add the byte in D to the running TU58 checksum in TUCKSM.  This is trickier
@@ -1978,9 +1954,9 @@ TUCLSM:	RLDI(DP,TUCKSM+2)	; point to the cheksum accumulator
 ;--
 TUTXSM:	RLDI(DP,TUCKSM+1)	; send the low byte first
 	LDN	DP		; ...
-	CALL(TUPUT)		; DON'T call TUPUTC!
+	CALL(SL1OUT)		; DON'T call TUPUTC!
 	INC DP\ LDN DP		; now sent the high byte
-	LBR	TUPUT		; ...
+	LBR	SL1OUT		; ...
 
 
 ;++
@@ -2007,60 +1983,7 @@ TURXSM:	RLDI(DP,TUCKSM+1)	; point to the checksum accumulator
 ; Here if the checksum doesn't match ...
 TURXS1:	SDF \ RETURN		; signal failure
 
-	.SBTTL	"TU58 Size and Identify Functions"
-
-;++
-;   This function is called by the F_SDSIZE call and is supposed to return
-; the size, in both sectors and megabytes, of an attached TU58 drive.  
-; Unfortunately RSP, at least for a real TU58, doesn't have a way to inquire
-; about the drive size so that's going to be tough.  What we do is to call
-; TUINIT to see if a TU58 is attached at all and, if it isn't, then we can
-; just return zero and an error.
-;
-;   If a drive really is attached, then we return the hard coded constants
-; for 65536 sectors and 32Mb, which is the maximum possible in RSP.
-;
-;CALL:
-;	D - drive select (ignored!)
-;	CALL(TUSIZE)
-;	<if error return with DF=1 and error register in D>
-;	<if no error return DF=0 and size in P1, T2 and T1>
-;--
-TUSIZE:	RCLR(P1)		; assume zero if error
-	CALL(TUINIT)		; try to initialize the TU58
-	LBDF	TUSIZ1		; give up if no drive
-	RLDI(P1,32)		; return P1 = 32Mb
-	RLDI(T2,1)		; and T2:T1 = 0x10000
-	RCLR(T1)		; ...
-TUSIZ1:	RETURN			; and we're done
-
-
-;++
-;   And this function is called by F_SDIDENT to return the manufacturer's
-; name and model for a TU58 drive.  It's equivalent to the F_IDEID call
-; for disk drives.  Unfortunately RSP doesn't have anything remotely like
-; this, so we just return the hardcoded string "TU58 SERIAL TAPE".  We do
-; this whether any TU58 is even attached or not, which might not be the best
-; thing.  Most code calls TUSIZE first though, and that will tell you
-; whether a TU58 drive really exists.
-;
-;CALL:
-;	P1   - address of string buffer
-;	D    - drive select
-;	CALL(TUIDENT)
-;	<always return DF=0>
-;--
-TUIDENT:PUSHR(T1)		; save a temporary register
-	RLDI(T1,TU58ID)		; point to the ID string
-TUIDE1:	LDA T1\ STR P1\ INC P1	; copy a byte to the caller's buffer
-	LBNZ	TUIDE1		; keep copying until EOS
-	IRX\ POPRL(T1)		; restore T1
-	CDF\ RETURN		; and always return success
-
-; Manufacturer string returned for all TU58 drives ...
-TU58ID:	.TEXT	"TU58 serial\000"
-
-	.SBTTL	"Storage Device Calls"
+	.SBTTL	Storage Device Calls
 
 ;++
 ;   The latest BIOS defines a set of generic "storage device" calls for mass
@@ -2068,10 +1991,7 @@ TU58ID:	.TEXT	"TU58 serial\000"
 ;
 ;	F_SDREAD - read one sector from a generic "storage device"
 ;	F_SDWRITE- write one sector to a generic "storage device"
-;	F_SDRESET- reset a generic "storage device"
 ;	F_SDBOOT - boot ElfOS from a generic "storage device"
-;	F_SDSIZE - return the capacity of a "storage device"
-;	F_SDIDENT- identify a storage device
 ;
 ;   All the F_SDXXX calls pass a unit number in D and it's up to the BIOS 
 ; (that's us!) to decide which physical device and unit should be addressed.
@@ -2107,7 +2027,7 @@ SDTYPE:	SMI	2		; is the unit number 0 or 1?
 ;   After the "SMI 2", D will contain $FE if the original unit was 0, and
 ; $FF if the original unit was 1.  We want T2.1 to be $E0 for unit 0 and
 ; $F0 for unit 1, so we just need to shift left and then mask.
-	SHL\ SHL\ SHL\ SHL	; put the IDE unit in the upper 4 bits of D
+SDTYP0:	SHL\ SHL\ SHL\ SHL	; put the IDE unit in the upper 4 bits of D
 	ANI $F0\ STR SP		; get rid of the other garbage
 	GHI T2\ ANI $0F		; isolate the upper four bits of the LBA
 	OR\ PHI T2		; and combine with the unit in T2
@@ -2131,49 +2051,29 @@ SDTYP2:	INC A\ INC A\ INC A	; skip six bytes on return
 SDREAD:	CALL(SDTYPE)		; see if IDE or TU58 is referenced
 	 LBR	 DISKRD		;  ... IDE disk selected
 	 LBR	 TUREAD		;  ... TU58 selected
-	 LBR	 UNIMPL		;  ... or none of the above!
+	 LBR	 BADDEV		;  ... or none of the above!
 
 ; Write to a storage device ...
 SDWRITE:CALL(SDTYPE)		; same as SDREAD!
 	 LBR	 DISKWR		;  ...
 	 LBR	 TUWRITE	;  ...
-	 LBR	 UNIMPL		;  ...
+;;	 LBR	 BADDEV		;  ...
 
-; Return the capacity of a storage device ...
-SDSIZE:	CALL(SDTYPE)		; same old thing!
-	 LBR	 DISKSZ		;  ...
-	 LBR	 TUSIZE		;  ...
-	 LBR	 UNIMPL		;  ...
+; Here for a bad device number ...
+BADDEV:	LDI $FF\ SDF		; return DF=1 and error $FF in D
+	RETURN			; ...
 
-; Identify a storage device ...
-SDIDENT:CALL(SDTYPE)		; ...
-	 LBR	 DISKID		;  ...
-	 LBR	 TUIDENT	;  ...
-	 LBR	 UNIMPL		;  ...
-
-;   And reset a storage device.  We could call SDTYPE here too, but since
-; neither DRVRST nor TUINIT cares about a unit number, we can simplify 
-; things a bit...
-SDRESET:SHR			; is the unit 0 or 1?
-	LBZ	DRVRST		; yes - reset IDE drives
-	SHR			; or is the unit 2 or 3?
-	LBZ	TUINIT		; yes - initialize the TU58 instead
-	LBR	UNIMPL		; nope - none of the above!
-
-	.SBTTL	"Storage Device Bootstrap"
+	.SBTTL	Storage Device Bootstrap
 
 ;++
 ;   The BIOS has three different calls that will attempt to bootstrap ElfOS.
 ;
-;   F_SDBOOT will boot from the "storage device" unit number passed in D.
-; F_SDBOOT first calls F_SDRESET on the specified unit, and then calls F_SDREAD
-; to read sector zero of that unit into memory at $100.  F_SDBOOT calls btcheck
-; to see that the unit contains a valid boot sector, and then stores the unit
-; number in memory for ElfOS to use later.  After that F_SDBOOT jumps to $106
-; to start the ElfOS bootstrap.  F_SDBOOT requires that the caller have SCRT
-; and a valid stack set up so that it can call other subroutines like F_SDRESET
-; and F_SDREAD, and also so that F_SDBOOT can return to the caller in the event
-; of an any error.
+;   F_SDBOOT calls F_SDREAD to read sector zero of that unit into memory at
+; $100.  F_SDBOOT stores the unit number in memory for ElfOS to use later.
+; After that F_SDBOOT jumps to $106 to start the ElfOS bootstrap.  F_SDBOOT
+; requires that the caller have SCRT and a valid stack set up so that it can
+; call other subroutines like F_SDREAD, and also so that F_SDBOOT can return
+; to the caller in the event of an any error.
 ;
 ;   If F_SDBOOT succeeds then it simply never returns.  If F_SDBOOT does
 ; encounter a hardware error, then it returns with DF=1 and the drive error
@@ -2199,7 +2099,7 @@ SDRESET:SHR			; is the unit 0 or 1?
 ;CALL:
 ;	<unit number in D>
 ;	CALL(F_SDBOOT)
-;	<return DF=1 if any hardware error, and DF=0 if disk not bootable>
+;	<return DF=1 if any hardware error>
 ;	<NEVER return if the bootstrap is successful!>
 ;
 ;	CALL(F_BOOTIDE)
@@ -2208,10 +2108,10 @@ SDRESET:SHR			; is the unit 0 or 1?
 ;	LBR	F_BOOT
 ;	<NEVER return, ever!>
 ;--
-COLDBOOT:INTOFF			; just in case ...
+COLDBOOT:
 	RLDI(SP,$00F0)		; set up a temporary stack
 	RLDI(A,BOOTIDE)		; proceed with the IDE bootstrap
-	LBR	F_INITCALL	;  ... after initializing SCRT .	
+	LBR	F_INITCALL	;  ... after initializing SCRT
 
 ; Here to boot from the IDE master drive ...
 BOOTIDE:LDI	0		; just select storage device 0
@@ -2219,17 +2119,12 @@ BOOTIDE:LDI	0		; just select storage device 0
 
 ; Here to boot any storage device ...
 SDBOOT:	PUSHD			; save the unit number for later
-	CALL(F_SDRESET)		; and initialize the selected drive
-	LBDF	BOOTRET		; quit now if hardware error
 	QCLR(T2,T1)		; read LBN zero
 	RLDI(P1,EO.BBUF)	;  ... into memory at $0100
 	POPD \ PUSHD		; get unit number, but leave it on the stack
 	CALL(F_SDREAD)		; and read sector zero
-        LBDF	BOOTRET		; branch if a disk error occurrs
-	CALL(btcheck)		; see if the bootstrap is valid
-	LBNF	BTELFOS		; start the bootstrap if it's valid
-	LDI 0\ CDF		; return D=DF=0 for invalid boot block
-BOOTRET:IRX\ RETURN		; and DF=1 for any hardware error
+        LBNF	BTELFOS		; branch if no disk error
+	IRX\ RETURN		; return DF=1 for any hardware error
 
 ; Select the ElfOS memory map and then jump to the ElfOS boot code ...
 ;   Note that at this point there's no way we can ever return - either
@@ -2246,7 +2141,80 @@ BTELFOS:POPD			; get the unit one last time
 	LDI MC.ELOS\ STR T1	; and select the ElfOS map
 	LBR	EO.BTSA		; jump to the ElfOS sector 0 code
 
-	.SBTTL	"Primary BIOS Entry Vectors"
+	.SBTTL	MiniDOS Storage Calls
+
+;++
+;   David Madole's Mini/DOS uses a different scheme to access multiple mass
+; storage devices, which is fortunately not completely incompatible with the
+; way we do things.  In Mini/DOS the standard IDEREAD and IDEWRITE calls take
+; a 24 bit LBA (NOT the full 28 bits!) passed in T2:T1 and T2.1 will contain
+; $En, where 'n' is the device number.  Thus $E0 would access device 0, $E1
+; accesses device 1, etc.  The upper nibble, which would have selected the
+; master or slave drive in the original IDEREAD/IDEWRITE, is always E and is
+; ignored.
+;
+;   We basically implement this literally with our four mass storage devices,
+; and $E0 selects the IDE master, $E1 the IDE slave, and $E2/$E3 the two TU58
+; units. For backward compatibility we also allow $F0 to select the IDE slave
+; as a special case, however $Fn where n != 0, will return an error.  Likewise,
+; $En where n > 3 is also an error.
+;--
+
+;++
+;   This routine will get the MiniDOS unit select from T2.1, convert it to
+; something DISKRD/DISKWR or TUREAD/TUWRITE will like, and then take the
+; appropriate return.  Except for the input, it's identical to the SDTYPE
+; routine used by the SDREAD/SDWRITE functions and we can share most of the
+; same code.
+;
+;   One tricky bit though - after we extract the unit from T2.1 we must then
+; zero T2.1.  If we don't then DISKWR/DISKRD will interpret the unit number as
+; part of the LBA and that'll never work.  Note that MiniDOS disks are limited
+; to 24 bit LBA addresses (T1, and T2.0) where as SDREAD/SDWRITE support the
+; full 28 bits.
+;--
+MDTYPE:	GHI T2\ ANI $1F		; get the selected unit number
+	PLO	BAUD		; save that for a minute
+	LDI 0\ PHI T2		; zero T2.1 so it's not taken as an address
+	GLO	BAUD		; restore the unit selected
+	LBR	SDTYPE		; and the rest is the same as SDTYPE
+
+;++
+;   There's a problem here (isn't that always the case?!) - since the MDREAD and
+; MDWRITE routines pass the unit number in T2.1 they are limited to 24 bit disk
+; addressing, but the SDREAD/SDWRITE routines still support 28 bits.  Because
+; of that, MDTYPE zeros out T2.1, BUT some ElfOS and MiniDOS code depends on
+; T2 being unchanged on return.  That means we need Yet Another Wrapper that
+; will save T2, do the actual read or write, and then restore T2.
+;
+;   Note that we don't need to save D on call, but we do need to preserve D
+; (which holds an error code) on return.
+;--
+
+; MDREAD wrapper ...
+MDREAD:	GHI T2\ PUSHD		; save T2.1
+	CALL(MDRD1)		; do the actual read
+	POPD\ PHI T2\ RETURN	; and return
+
+; MDWRITE wrapper ...
+MDWRITE:GHI T2\ PUSHD		; save T2.1
+	CALL(MDWR1)		; do the actual write
+	POPD\ PHI T2\ RETURN	; and return
+
+
+; Here when MiniDOS wants to read from a mass storage device ...
+MDRD1:	CALL(MDTYPE)		; figure out whether IDE or TU58 is addressed
+	 LBR	 DISKRD		; IDE master or slave
+	 LBR	 TUREAD		; TU58 unit 0 or 1
+	 LBR	 BADDEV		; none of the above!
+
+; Here when MiniDOS wants to write to a mass storage device ...
+MDWR1:	CALL(MDTYPE)		; same as MDREAD ...
+	 LBR	 DISKWR		; write IDE
+	 LBR	 TUWRITE	; write TU58
+	 LBR	 BADDEV		; bad device
+
+	.SBTTL	Primary BIOS Entry Vectors
 
 #if ($ > DPBASE)
 	.ECHO	"***** MONITOR RAM PAGE OVERWRITTEN *****\n"
@@ -2265,33 +2233,30 @@ BTELFOS:POPD			; get the unit one last time
 	BENTRY(F_TYPE,     CONOUT)	; type character in D on console
 	BENTRY(F_READ,     CONGET)	; read character from console to D
 	BENTRY(F_MSG,      TTEXT)	; type ASCIZ string pointed to by P1
-	BENTRY(F_TYPEX,    UNIMPL)	; deprecated
+	BUNIMP(F_TYPEX)			; deprecated
 	BENTRY(F_INPUT,    INPUT)	; read string into 256 byte buffer at P1
 	BENTRY(F_STRCMP,   strcmp)	; compare two strings
 	BENTRY(F_LTRIM,    ltrim)	; trim spaces from beginning of a string
 	BENTRY(F_STRCPY,   strcpy)	; copy a string
 	BENTRY(F_MEMCPY,   memcpy)	; copy arbitrary data
-	BENTRY(F_WRTSEC,   UNIMPL)	; deprecated
-	BENTRY(F_RDSEC,    UNIMPL)	; deprecated
-	BENTRY(F_SEEK0,    UNIMPL)	; deprecated
-	BENTRY(F_SEEK,     UNIMPL)	; deprecated
-	BENTRY(F_DRIVE,    UNIMPL)	; deprecated
+	BUNIMP(F_WRTSEC)		; deprecated
+	BUNIMP(F_RDSEC)			; deprecated
+	BUNIMP(F_SEEK0)			; deprecated
+	BUNIMP(F_SEEK)			; deprecated
+	BUNIMP(F_DRIVE)			; deprecated
 	BENTRY(F_SETBD,    AUTOBAUD)	; figure out the console baud rate
 	BENTRY(F_MUL16,    mul16)	; 16x16 multiply -> 32 bit result
 	BENTRY(F_DIV16,    div16)	; 16/16 divide -> result and remainder
-	BENTRY(F_IDERESET, DRVRST)	; reset IDE drive
-	BENTRY(F_IDEWRITE, DISKWR)	; write IDE sector (master drive only)
-	BENTRY(F_IDEREAD,  DISKRD)	; read   "     "      "      "     "
-;	BENTRY(F_IDERESET, XXRESET)	; reset IDE drive
-;	BENTRY(F_IDEWRITE, XXWRITE)	; write IDE sector (master drive only)
-;	BENTRY(F_IDEREAD,  XXREAD)	; read   "     "      "      "     "
+	BENTRY(F_IDERESET, BADDEV)	; deprecated
+	BENTRY(F_IDEWRITE, MDWRITE)	; write IDE sector (Mini/DOS style)
+	BENTRY(F_IDEREAD,  MDREAD)	; read   "     "      "   "    "
 	BENTRY(F_INITCALL, INISCRT)	; initialize the SCRT routines
 	BENTRY(F_BOOTIDE,  BOOTIDE)	; same as F_BOOT
 	BENTRY(F_HEXIN,    hexin)	; hexadecimal ASCII string to binary
 	BENTRY(F_HEXOUT2,  hexout2)	; binary to hexadecimal ASCII string
 	BENTRY(F_HEXOUT4,  hexout4)	;   "     "   "    "      "      "
 	BENTRY(F_TTY,      CONOUT)	; same as F_TYPE
-	BENTRY(F_MOVER,    UNIMPL)	; deprecated??
+	BUNIMP(F_MOVER)			; deprecated??
 	BENTRY(F_MINIMON,  MINIMON)	; trap to the EPROM firmware
 	BENTRY(F_FREEMEM,  FREEMEM)	; return memory size
 	BENTRY(F_ISNUM,    isnum)	; DF=1 if D contains numeric char
@@ -2311,16 +2276,11 @@ BTELFOS:POPD			; get the unit one last time
 	BENTRY(F_NBREAD,   NBREAD)	; non-blocking read from console
 	BENTRY(F_SDREAD,   SDREAD)	; read storage device sector
 	BENTRY(F_SDWRITE,  SDWRITE)	; write storage device sector
-	BENTRY(F_SDRESET,  SDRESET)	; reset storage decice subsystem
+	BUNIMP(F_SDRESET)		; deprecated
 	BENTRY(F_SDBOOT,   SDBOOT)	; boot from specific storage device
-	BENTRY(F_SDSIZE,   SDSIZE)	; return the capacity of a storage device
+	BUNIMP(F_SDSIZE)		; deprecated already!
 
-;   Unimplemented BIOS functions should branch to this routine - by convention,
-; any call that returns with DF=1 indicates some kind of failure...
-UNIMPL:	SDF			; set DF=1
-	RETURN			; and return
-
-	.SBTTL	"F_FREEMEM and F_GETDEV functions"
+	.SBTTL	F_FREEMEM and F_GETDEV functions
 
 ;   This is the F_FREEMEM function - it returns the address of the last usable
 ; RAM location in P1.  Since our memory size is fixed (and indeed, the POST
@@ -2335,24 +2295,11 @@ FREEMEM:RLDI(P1,USRRAM)		; this is all we need
 ; is totally different from the HWFLAGS bitmap - that one tells us which
 ; devices are present and passed the POST.  Firmware and BIOS support for
 ; these devices is implicit.
-BIOSBITS .EQU	FGD_SDFUN+FGD_NBREAD+FGD_F0VEC+FGD_F8VEC+FGD_RTC+FGD_UART+FGD_IDE+FGD_EVER
+BIOSBITS .EQU	FGD_SDFUN+FGD_NBREAD+FGD_F0VEC+FGD_F8VEC+FGD_RTC+FGD_UART+FGD_IDE
 GETDEV:	RLDI(P1,BIOSBITS)
 	RETURN
 
-	.SBTTL	100ms Delay
-
-;++
-;   This little routine delays for 100ms, assuming the 2.5MHz clock speed.
-; It's used by the TU58 and IDE code, and got stuck here because of space
-; limitations in the BIOS sections where those functions reside.
-;--
-DLY100:	LDI 50 \ PLO P1		; call DLy2MS 50 times
-DLY101:	DLY2MS			; spin for 2ms 
-	DEC P1 \ GLO P1		; have we waited for 100ms?
-	LBNZ	DLY101		; no - keep going
-	RETURN			; all done
-
-	.SBTTL	"Standard Call and Return Technique"
+	.SBTTL	Standard Call and Return Technique
 
 ;++
 ;   These two routines implement the "standard call and return tecnhique", more
@@ -2412,6 +2359,12 @@ DLY101:	DLY2MS			; spin for 2ms
 ; where as the SCALL and SRETURN subroutines both set X to 2 before pushing.
 ; And of course, with the hardware implementation R4 and R5 are not used and
 ; are potentially free for other purposes.
+;
+;   One last point - if you're interested in calculating exact timing for
+; something, then a CALL requires 36 machine cycles and that's including the
+; "SEP R4" used by the initial CALL macro.  A return takes 30 cycles, including
+; the "SEP R5" for the RETURN macro. That makes the total call/return overhead
+; 66 machine cycles.
 ;--
 
 ;++
@@ -2430,33 +2383,33 @@ DLY101:	DLY2MS			; spin for 2ms
 SCRTBASE .EQU	F_EXTBVER-18-15-17
 	.ORG	SCRTBASE
 
-; Standard subroutine call ... 18 bytes ...
-	SEP	PC		; start the subroutine running
-SCALL:	PLO	BAUD		; save the D register
+; Standard subroutine call ... 18 bytes, 34 cycles ...
+	SEP	PC		; [2] start the subroutine running
+SCALL:	PLO	BAUD		; [2] save the D register
 ;   Mike's BIOS code stored the LOW byte of R6 first, and then the HIGH byte.
 ; That's wrong, at least compared to the way the 1804 hardware works.  I'm
 ; going to switch it here and hopefully I won't regret it!
-	SEX	SP		; make sure the stack is selected
-	PUSHR(A)		; and save the A register
-	RCOPY(A,PC)		; then copy the caller's PC to A
-	RLDA(PC,A)		; fetch the subroutine address
-	GLO	BAUD		; restore D
-	BR	SCALL-1		; restore CALLPC and start the subroutine
+	SEX	SP		; [2] make sure the stack is selected
+	PUSHR(A)		; [8] and save the A register
+	RCOPY(A,PC)		; [8] then copy the caller's PC to A
+	RLDA(PC,A)		; [8] fetch the subroutine address
+	GLO	BAUD		; [2] restore D
+	BR	SCALL-1		; [2] restore CALLPC and start the subroutine
 
 #if (SCALL != F_CALL)
 	.ECHO	"***** SCALL ADDRESS MISMATCH *****\n"
 #endif
 
 
-; Standard subroutine return ... 15 bytes ...
-	SEP	PC		; return to the original caller
-SRETURN:PLO	BAUD		; save D temporarily
-	RCOPY(PC,A)		; A contains the return address
-	SEX	SP		; make sure the stack is selected
-	IRX			; point to the saved A
-	POPRL(A)		; and pop it off the stack
-	GLO	BAUD		; restore D
-	BR	SRETURN-1	; restore RETPC and return to the caller
+; Standard subroutine return ... 15 bytes, 28 cycles ...
+	SEP	PC		; [2] return to the original caller
+SRETURN:PLO	BAUD		; [2] save D temporarily
+	RCOPY(PC,A)		; [8] A contains the return address
+	SEX	SP		; [2] make sure the stack is selected
+	IRX			; [2] point to the saved A
+	POPRL(A)		; [8] and pop it off the stack
+	GLO	BAUD		; [2] restore D
+	BR	SRETURN-1	; [2] restore RETPC and return to the caller
 
 #if (SRETURN != F_RETURN)
 	.ECHO	"***** SRETURN ADDRESS MISMATCH *****\n"
@@ -2476,13 +2429,17 @@ SRETURN:PLO	BAUD		; save D temporarily
 ;   Note that it's up to the caller (that's you!) to load SP with a valid
 ; stack pointer!
 ;
+;   And note that it's written in this rather awkward way, using a RETURN,
+; so that it will work whether the PC is R0 or R3 when we're called!
+;
 ; 17 bytes ...
 INISCRT:RLDI(CALLPC,SCALL)	; initialize the CALLPC and ...
 	RLDI(RETPC,SRETURN)	;  ... RETPC registers ...
-	RCOPY(PC,A)		; load the "return" address into R3
-	SEP	PC		; and we're done
+	DEC SP\ DEC SP		; fixup SP (because RETURN will increment it!)
+	NOP\ NOP		; keep the length at 17 bytes!
+	RETURN			; and then branch to the address in A
 
-	.SBTTL	"Last BIOS Page"
+	.SBTTL	Last BIOS Page
 
 ;   The very last few bytes of the BIOS contain some additional fixed, magic,
 ; locations that we need to play along with.
@@ -2495,12 +2452,13 @@ INISCRT:RLDI(CALLPC,SCALL)	; initialize the CALLPC and ...
 #endif
 	.WORD	RIGHTS
 
-;  The BIOS version is stored here in three bytes.  We do the same, although
-; notice that the format of my version numbers are different from Mike's ...
+;  The BIOS version is stored here in three bytes.  The current format, as used
+; by MiniDOS, puts the BIOS "manufacturer" in the first byte and then a BIOS
+; dependent version in the second two bytes.
 #if ($ != F_VERSION)
 	.ECHO	"***** F_VERSION ADDRESS MISMATCH *****\n"
 #endif
-	.BYTE	VERMAJ
+	.BYTE	STGBIOS
 	.WORD	VEREDT
 
 

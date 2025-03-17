@@ -1,4 +1,5 @@
 	.TITLE	Minuet in G Major
+	.SBTTL	For Edgar ...
 
 ;++
 ;      Copyright (C) 2021-2024 By Spare Time Gizmos, Milpitas CA.
@@ -25,12 +26,14 @@
 ; G Major", often attributed to J.S. Bach but more likely written by Christian
 ; Petzold, c.a. 1725.  Big band leader Freddy Martin often played this piece
 ; during the late 1940s, and later songwriters Linzer and Randell wrote lyrics
-; for it.  That version, "A Lover's Concerto," was recorded by girl group "The
-; Toys" and made it to #2 on the Billboard Hot 100 in 1965.  Other than a 
+; for it.  That version, "A Lover's Concerto," was recorded by the girl group
+; "The Toys" and made it to #2 on the Billboard Hot 100 in 1965.  Other than a 
 ; change in the time signature, "A Lover's Concerto" is exactly the same melody.
 ; There are many, many examples of pop/rock songs that were inspired by
-; classical music, but to my knowledge this is the one that is an exact copy
-; of the original piece.
+; classical music, but to my knowledge this is the only one that is an exact
+; copy of the original piece.  It was also famously (or perhaps not so famously,
+; as the movie was a box office flop) adapted by Giorgio Moroder for the 1984
+; movie "Electric Dreams".
 ;
 ;   This data was generated from a MIDI file using by Len Shustek's MIDITONES
 ; program -

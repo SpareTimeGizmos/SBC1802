@@ -71,16 +71,30 @@ P2	.EQU	$D	;  "  second " "	"		"
 P3	.EQU	$C	;  "  third  " "	"		"
 P4	.EQU	$B	;  and fourth...
 
-;   On the Elf2K and PicoElf with Mike's BIOS then the BAUD register holds the
+;   On the Elf2K and PicoElf with Mike's BIOS the BAUD.1 register holds the
 ; magic baud rate constants for the console serial port. With UT71 and MicroDOS
-; the same register is called AUX and holds the local echo flag in RE.1 as well
-; as being a temporary for the console I/O routines.
+; the same register is called AUX and is used as a temporary for the console
+; I/O routines.
+;
+;   Both Mike's BIOS and UT71 store a "local echo flag" in the LSB of BAUD.1,
+; and this bit determines whether the console input routine will echo what is
+; read from the console
 ;
 ;   WARNING - Mike's BIOS SCRT call and return routines use BAUD.0 as a 
 ; temporary for saving the D register.  Not only that, but there's apparently
 ; some misguided code out there that depends on a copy of the original value
 ; of D, from the time of the CALL, being left in BAUD.0!
+;
+;   The SBC1802 BIOS uses a hardware UART and doesn't need BAUD.1 to store
+; a magic constant, however the SBC1802 still uses the local echo flag in the
+; LSB.  Moreover, the SBC1802 uses other bits in BAUD.1 to enable RTS/CTS
+; flow control and even to select an alternate console.
 BAUD	.EQU	$E	; unused on the SBC1802
+
+; Magic bits in BAUD.1 ...
+BD.LEC	.EQU	$01	; local echo flag
+BD.RTS	.EQU	$40	; enable RTS/CTS flow control
+BD.ALT	.EQU	$80	; select the alternate console (e.g. SLU1)
 
 	.SBTTL	Generic Definitions
 
@@ -132,25 +146,20 @@ CH.DEL	.EQU	$7F	; rubout (delete)
 #define WORD(x)		((x) & $FFFF)
 #define MKWORD(H,L)	((H)<<8) | (L))
 
-;   These delay macros are all calculated based on a 2.5MHz crystal frequency.
-; Each major cycle (8 clocks) requires 3.2us, and a two (yes, two not one!)
-; millisecond delay needs exactly 625 major cycles.  The following loop uses 4
-; major cycles per iteration, so a count of 155 gives 620 clocks.  Add in two
-; more for the LDI and the final NOP adds three more (yes, NOP takes 3!) for a
-; grand total of 625...
-DLYCONS	.EQU	155		; magic constant for 2mS at 2.5MHz
-#define DLY2MS	LDI DLYCONS\ SMI 1\ BNZ $-2\ NOP
+;   This macro delays for 1 ms as calculated from the CPU clock frequency. Each
+; iteration of the loop takes 4 machine cycles or 32 clocks, and we can divide
+; the CPUCLOCK by 32000 to get the number of iterations for a 1ms delay.  This
+; works up to approximately 8MHz, after which the loop constant will be greater
+; than 256.  Note that some roundoff error is inevitable and this delay is not
+; exact use care if precise timing is required, especially if this macro is
+; used in a loop.
+DLYCONS	.EQU	CPUCLOCK/32000
+#define DLY1MS	LDI DLYCONS\ SMI 1\ BNZ $-2
 
-;  This macro will delay for one millisecond, and you can use it with DLY2MS
-; to generate delays for odd numbers of milliseconds.  It's not quite accurate
-; since a 1mS delay with a 2.5MHz CPU clock needs 312.5 major cycles, and
-; there's no trick that I can think of to get half a cycle.
-#define DLY1MS	LDI DLYCONS/2+1\ SMI 1\ BNZ $-2
-
-;   And this macro uses T1.0 and the DLY2MS macro to delay up to half a second.
-; It's not very accurate for small intervals (just call DLY2MS directly!), but
-; it is good enough for most purposes...
-#define DELAY(x)	LDI x/2\ PLO T1\ DLY2MS\ DEC T1\ GLO T1\ BNZ $-9
+;   And this macro uses T1.0 and the DLY1MS macro to delay up to a quarter or
+; a second.  It's not very accurate for small intervals (just call DLY1MS
+; directly instead!), but it is good enough for most purposes...
+;#define DELAY(x)	LDI x\ PLO T1\ DLY1MS\ DEC T1\ GLO T1\ BNZ $-9
 
 ; Macros for some common BIOS functions...
 #define OUTSTR(pstr)	RLDI(P1,pstr)\ CALL(F_MSG)
@@ -451,7 +460,7 @@ POST8	.EQU	$08	;; PD.SEGA+PD.SEGB+PD.SEGC+PD.SEGD+PD.SEGE+PD.SEGF+PD.SEGG
 POST7	.EQU	$07	;; PD.SEGA+PD.SEGB+PD.SEGC
 POST6	.EQU	$06	;; PD.SEGA+PD.SEGC+PD.SEGD+PD.SEGE+PD.SEGF+PD.SEGG
 POST5	.EQU	$05	;; PD.SEGA+PD.SEGC+PD.SEGD+PD.SEGF+PD.SEGG
-;POST4	.EQU	$04	;; PD.SEGB+PD.SEGC+PD.SEGF+PD.SEGG
+POST4	.EQU	$04	;; PD.SEGB+PD.SEGC+PD.SEGF+PD.SEGG
 POST3	.EQU	$03	;; PD.SEGA+PD.SEGB+PD.SEGC+PD.SEGD+PD.SEGG
 POST2	.EQU	$02	;; PD.SEGA+PD.SEGB+PD.SEGD+PD.SEGE+PD.SEGG
 POST1	.EQU	$01	;; PD.SEGB+PD.SEGC
@@ -681,6 +690,7 @@ ID_LBA	.EQU  60*2	; double word giving total number of sectors
 ; Other IDE/ATA constants ...
 DSKBSZ	.EQU	512	; IDE block size (always 512 bytes!)
 DSKBUF	.EQU	$0000	; temporary disk buffer in low RAM
+IDDTMO	.EQU	2000	; POST diagnostic timeout (2 seconds, in 1ms units)
 
 ; These macros will read and write IDE registers ...
 #define WRIDE(r,v)	SEX PC\ OUT IDESEL\ .BYTE r\ OUT IDEBUF\ .BYTE v
@@ -782,9 +792,9 @@ H1.IDE0	 .EQU	BIT0	; IDE/ATA master drive present
 ; Second byte flags at HWFLAGS+1 ...
 H0.SLU1	 .EQU	BIT7	; CDP1854 communication serial line unit present
 H0.PPI	 .EQU	BIT6	; CDP1851 programmable parallel interface present
-;		BIT5	; bit 5 unused
+H0.TU58	 .EQU	BIT5	; serial TU58 drive detected
 H0.PSG	 .EQU	BIT4	; AY-3-8912 programmable sound generator prsent
-H0.TMR	 .EQU	BIT3	; CDP1878 programmable timer/counter present
+H0.CTC	 .EQU	BIT3	; CDP1878 programmable timer/counter present
 
 	.EJECT
 ;	SBTTL	SBC1802 Expansion Board Definitions 
@@ -1017,7 +1027,7 @@ PSGVOL	.EQU	7	; default volume (0..15)
 ;   To boot an ElfOS volume, we read LBN 0 into memory at EO.BBUF.  To verify
 ; that this is indeed a bootable ElfOS system, we checksum the first EO.BCBC
 ; bytes of that data and, if the result matches EO.BCCK, we're Golden.  Start
-; running the bootstrap at address EO.BBUF with P=R0.
+; running the bootstrap at address EO.BTSA with P=R0.
 EO.BBUF	.EQU	$0100	; RAM area for loading bootstrap
 EO.BTSA	.EQU	$0106	; bootstrap starting address
 EO.BCBC	.EQU	$41	; ElfOS boot check byte count
@@ -1062,7 +1072,6 @@ UDRETURN .EQU	$919C	; SCRT RETURN address
 UDECHO   .EQU	$910A	; echo status
 UDENTRY	 .EQU	$9040	; entry address into MicroDOS
 UDNAME   .EQU	$A843	; 'MICRODOS' name in kernel
-
 
 	.SBTTL	RAM Page Storage Map
 
@@ -1118,7 +1127,12 @@ OSTYPE:	.BLOCK	1	; should be MC.ELOS or MC.MDOS
 ; encoded rate for SLU0 (console) and the lower 4 bits are for SLU1.  Baud rates
 ; are encoded for the COM8116/8136 - see the BD.xxx constants in SBC1802.INC.
 ; SL1FMT contains the character format for SLU1 in the lower 5 bits, exactly as
-; used by the CDP1854 UART.  The format for SLU0 is fixed as 8N1.
+; used by the CDP1854 UART.  The format for SLU0 is fixed as 8N1.  The SLFLAGS
+; byte saves the flow control and alternate console flags normally kept in
+; register BAUD.1.
+;
+;   DON'T CHANGE THE ORDER OF SLFLAGS, SLBAUD and SL1FMT!
+SLFLAGS:.BLOCK	1	; saved state of BAUD.1 flags
 SLBAUD:	.BLOCK	1	; baud rates for both serial ports
 SL1FMT:	.BLOCK	1	; character format for SLU1
 

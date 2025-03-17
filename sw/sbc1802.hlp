@@ -39,6 +39,8 @@
 #			Add EROM/DROM commands.
 # 10-AUG-24	RLA	Add FILL, SHOW VERSION, and TEST ROM.
 # 15-AUG-24	RLA	Add TEST SLU.
+# 13-MAR-24	RLA	Add SET SLU0 RTS|NORTS
+#			Add SET CONSOLE SLU0|SLU1
 #--
 MEMORY AND I/O COMMANDS
     Examine addr		-- examine one byte
@@ -52,65 +54,63 @@ MEMORY AND I/O COMMANDS
     FIll [start end [data]]	-- fill memory
     ERom addr			-- examine ROM
     DRom addr data ...		-- patch EEPROM
+    :llaaaattdddd..cc		-- load an INTEL hex record
 
 PROGRAM CONTROL COMMANDS
-    BASic			-- start ROM BASIC
-    CAll [addr]			-- CALL a program w/SCRT (P=3)
-    RUn [addr]			-- RUN a program (P=0)
-    COntinue			-- continue after break
+    BASic		-- start ROM BASIC
+    CAll [addr]		-- CALL a program w/SCRT (P=3)
+    RUn [addr]		-- RUN a program (P=0)
+    COntinue		-- continue after break
 
 MASS STORAGE COMMANDS
-    DUmp ddd: nnnnn		-- dump device block
-    Boot ddd:			-- Boot ELfOS
-    FORMAT ddd:			-- zero device
+    DUmp ddd: nnnnn	-- dump device block
+    Boot ddd:		-- Boot ELfOS
+    FORMAT ddd:		-- zero device
 
 MICRODOS COMMANDS
-    UMap n ddd:filename		-- map virtual diskette to ElfOS file
-    UMap n ddd:			-- map virtual diskette to entire device
-    UMap n			-- remove mapping for virtial diskette
-    UMap			-- list all virtual diskette mappings
-    UBoot ddd:filename		-- map virtual diskette 0 and boot
-    UBoot			-- boot from virtual diskette 0
+    UMap n ddd:filename	-- map virtual diskette to ElfOS file
+    UMap n ddd:		-- map virtual diskette to entire device
+    UMap n		-- remove mapping for virtial diskette
+    UMap		-- list all virtual diskette mappings
+    UBoot ddd:filename	-- map virtual diskette 0 and boot
+    UBoot		-- boot from virtual diskette 0
 
 SET COMMANDS
-    SEt Q 0|1			-- set or reset Q output
+    SEt Q 1|0|TOGGLE		-- set, reset or toggle Q output
     SEt RTC mm/dd/yyyy hh:mm:ss	-- set RTC date and time
     SEt YEar yyyy		-- update the RTC year
     SEt OStype ELFos|MICrodos	-- select the memory map
     SEt SLU0 bbbbb		-- set the console baud rate
     SEt SLU1 bbbbb [xYz]	-- set SLU1 baud and format
+    SEt SLU0 RTS|NORTS		-- enable or disable flow control
+    SEt CONsole SLU0|SLU1	-- redirect console to SLU1
     SEt REStart ddd		-- auto boot from device on power up
     SEt REStart xxxx		-- start program on power up
     SEt NOREStart		-- power up to this monitor
 
 SHOW COMMANDS
-    SHow REGisters		-- show registers after break
-    SHow DP			-- show monitor data
-    SHow RTC			-- show current date and time
-    SHow EF group		-- show all EF inputs
-    SHow SLU			-- show serial port settings
-    SHow CONFiguration		-- show hardware configuration
-    SHow OStype			-- show current memory map
-    SHow BATTery		-- show backup battery status
-    SHow DISk			-- show all IDE disk devices
-    SHow TAPe			-- show all TU58 tape devices
-    SHow CPU			-- show CPU type and frequency
-    SHow REStart		-- show restart option
-    SHow VERsion		-- show firmware version
+    SHow REGisters	-- show registers after break
+    SHow DP		-- show monitor data
+    SHow RTC		-- show current date and time
+    SHow EF group	-- show all EF inputs
+    SHow SLU		-- show serial port settings
+    SHow CONFiguration	-- show hardware configuration
+    SHow OStype		-- show current memory map
+    SHow BATtery	-- show backup battery status
+    SHow DISk		-- show all IDE disk devices
+    SHow TAPe		-- show all TU58 tape devices
+    SHow CPU		-- show CPU type and frequency
+    SHow REStart	-- show restart option
+    SHow VERsion	-- show firmware version
 
 TEST COMMANDS
-    TEst RAM0|RAM1		-- test RAM chip
-    TEst ROM			-- test ROM chip
-    TEst PSG			-- test sound generator chip
-    TEst SLU			-- loop SLU0 and SLU1
+    TEst RAM0|RAM1	-- test RAM chip
+    TEst ROM		-- test ROM chip
+    TEst PSG		-- test sound generator chip
+    TEst SLU		-- loop SLU0 and SLU1
 
 OTHER COMMANDS
-    HEL[p]			-- print this text
-    ; any text			-- comment command procedures
-    :llaaaattdddd..cc		-- load an INTEL hex record
-    ^C				-- cancel current command line
-    <BREAK>			-- interrupt execution of long commands
-
-STORAGE DEVICE NAMES
-    IDn	- IDE/ATA drive
-    TUn - TU58 serial disk
+    HElp		-- print this text
+    ; any text		-- comment command procedures
+    ^C			-- cancel current command line
+    <BREAK>		-- interrupt execution of long commands

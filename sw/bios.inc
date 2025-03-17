@@ -73,7 +73,7 @@ f_sdread:   equ  (BIOS+87h)            ; read storage device sector
 f_sdwrite:  equ  (BIOS+8Ah)            ; write storage device sector
 f_sdreset:  equ  (BIOS+8Dh)            ; reset storage device subsystem
 f_sdboot:   equ  (BIOS+90h)	       ; boot from a specific storage device
-f_sdsize:   equ  (BIOS+93h)	       ; return storage device capacity
+f_sdsize:   equ  (BIOS+93h)	       ; deprecated
 f_version:  equ  (BIOS+0f9h)           ; 3 bytes holding bios version number
 f_extbver:  equ  (f_version-2)	       ; 2 byte pointer to extended bios version
 f_checksum: equ  $fffc		       ; 4 bytes with the STG EPROM checksum
@@ -91,13 +91,13 @@ f_gettod    equ  (EBIOS+15h)        ; read time of day clock
 f_settod    equ  (EBIOS+18h)        ; set time of day clock
 f_rdnvr     equ  (EBIOS+1bh)        ; read non volatile RAM
 f_wrnvr     equ  (EBIOS+1eh)        ; write non volatile RAM
-f_idesize   equ  (EBIOS+21h)        ; return size of attached IDE drive(s)
-f_ideid     equ  (EBIOS+24h)        ; return device data for IDE drive(s)
-f_tmtoas    equ  (EBIOS+2ah)        ; time to ASCII string
-f_dttoas    equ  (EBIOS+27h)        ; date to ASCII string
+f_idesize   equ  (EBIOS+21h)        ; deprecated
+f_ideid     equ  (EBIOS+24h)        ; deprecated
+f_tmtoas    equ  (EBIOS+2ah)        ; deprecated
+f_dttoas    equ  (EBIOS+27h)        ; deprecated
 f_rtctest   equ  (EBIOS+2dh)        ; test size and presence of RTC/NVR
-f_astodt    equ  (EBIOS+30h)        ; convert ASCII string to date
-f_astotm    equ  (EBIOS+33h)        ; convert ASCII string to time
+f_astodt    equ  (EBIOS+30h)        ; deprecated
+f_astotm    equ  (EBIOS+33h)        ; deprecated
 f_nvrcchk   equ  (EBIOS+36h)	    ; compute NVR checksum
 
 ; BIOS capability bits returned by f_getdev ...
@@ -111,7 +111,6 @@ fgd_f8vec   equ  BIT6               ; extended BIOS vectors at $F800 implemented
 fgd_f0vec   equ  BIT7               ; extended BIOS vectors at $F000 implemented
 fgd_nbread  equ  BIT8               ; f_nbread implemented
 fgd_sdfun   equ  BIT9		    ; f_sdread/f_sdwrite/f_sdreset implemented
-fgd_ever    equ  BIT10              ; BIOS manufacturer returned in RD
 
 ; SBC1802 specific vectors and functions
 f_trap	    equ	 (SBIOS+00h)	    ; breakpoint trap entry
@@ -120,9 +119,15 @@ f_run       equ  (SBIOS+06h)        ; run a program with P=0
 f_tuinit    equ  (SBIOS+09h)        ; initialize TU58
 f_turead    equ  (SBIOS+0ch)        ; read TU58 sector
 f_tuwrite   equ  (SBIOS+0fh)        ; write TU58 sector
-f_hwflags   equ  (SBIOS+12h)	    ; get SBC1802 hardware flags
-f_sdident   equ  (SBIOS+15h)	    ; identify storage device
-f_btcheck   equ  (SBIOS+18h)        ; check for valid ElfOS bootstrap
+f_sl1out    equ  (SBIOS+12h)        ; blocking output to SLU1
+f_sl1hit    equ  (SBIOS+15h)        ; test SLU1 for input
+f_sl1in     equ  (SBIOS+18h)        ; blocking read w/o echo
+f_sl1get    equ  (SBIOS+1bh)        ; blocking read with echo
+f_sl1nbr    equ  (SBIOS+1eh)        ; non-blocking read w/o echo
+f_testhwf   equ  (SBIOS+21h)	    ; test SBC1802 hardware flags
 
 ; SBC1802 debugger breakpoint (cause a trap to f_trap)...
 #define	BPT	MARK\ SEP 1
+
+; Spare Time Gizmos BIOS identifier ...
+STGBIOS     equ  3

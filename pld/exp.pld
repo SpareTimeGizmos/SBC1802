@@ -32,11 +32,12 @@
 /* 26-FEB-24	RLA	Can't use port 1 for PSG_ADDR!!!		*/
 /*  1-AUG-24	RLA	Changes for revision B of the expansion board	*/
 /*  8-AUG-24	RLA	Add I/O ports for second PSG!			*/
+/* 15-MAR-25	RLA	Extend the I/O WRITE time for the PSG!		*/
 /*--									*/
 NAME		EXP;
 PARTNO		EXP;
-REVISION	F;
-DATE		08/08/24;
+REVISION	G;
+DATE		03/15/25;
 DESIGNER	Robert Armstrong;
 COMPANY		Spare Time Gizmos;
 ASSEMBLY	SBC1802-EXPANSION;
@@ -118,10 +119,25 @@ RD_IOGROUP = (IORD & IOGROUP);
 /* that there are TWO PSGs - one has the A8 enable input wired to N2	*/
 /* and responds to I/O addresses 6 and 7, and the other has A8 wired to	*/
 /* N2 inverted and responds to addresses 2 and 3.  			*/
+/*									*/
+/*   And that's not all - there is yet another problem (isn't there	*/
+/* always?!).  The PSG requires obscenely long times for its I/O read	*/
+/* and write pulse.  For an I/O read that isn't a problem because we	*/
+/* have the IO_STRETCH signal, which gives us about five CPU clocks and	*/
+/* that's more than enough.  But for a normal I/O write we have only	*/
+/* the width of TPB, which is about one CPU clock.  That's borderline	*/
+/* even with a 2.5Mhz CPU clock, and at 5MHz it's not nearly enough.	*/
+/*									*/
+/*   So we kludge up a PSGWR signal which is a modified I/O stretch	*/
+/* that extends from the trailing edge of TPA to the leading edge of	*/
+/* TPB.  That's more than long enough, even at 5Mhz.  Why the leading	*/
+/* edge of TPB here rather than the trailing?  To give extra hold time	*/
+/* to the PSG, which apparently needs that too.				*/
+PSGWR = ((IO_STRETCH & !TPA) /*# TPB*/) & MRD;
 PSG_ADDR = (N:2 # N:6) & PSG_GROUP; /* PSG register select (write only)	*/
 PSG_DATA = (N:3 # N:7) & PSG_GROUP; /* PSG data port (read/write)	*/
-PSG_BC1  = (IORD & PSG_DATA) # (IOWR & PSG_ADDR);
-PSG_BDIR = (IOWR & PSG_DATA) # (IOWR & PSG_ADDR);
+PSG_BC1  = (IORD & PSG_DATA) # (PSGWR & PSG_ADDR);
+PSG_BDIR = (PSGWR & PSG_DATA) # (PSGWR & PSG_ADDR);
 
 
 /*   And lastly, figure out the data direction for the bus buffer. 	*/

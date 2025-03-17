@@ -28,7 +28,7 @@
 ; the monitor RAM and memory mapped peripherals, and normally this part of ROM
 ; can never be accessed.
 ;
-;   The basic plan for an in situ update of the SBC1802 firmware goees like
+;   The basic plan for an in situ update of the SBC1802 firmware goes like
 ; this -
 ;
 ;   Step 0 - make sure your EEPROM wasn't software write protected when you
@@ -40,7 +40,7 @@
 ;   Step 2 - download the new firmware image to RAM from $0000 to $7FFF
 ;	using either the XLOAD command or the Intel .HEX file downloader.
 ;	Note that, although the code actually lives at $8000 to $FFFF,
-;	the firmware HEX file is origined to $0000 so the Intel HEX loader
+;	the firmware HEX file is ORIGINed to $0000 so the Intel HEX loader
 ;	will work just fine.  If you want to use XLOAD, you'll have to
 ;	convert the HEX file to a pure binary image first.
 ;
@@ -87,7 +87,7 @@
 ; code is NOT copied to the EEPROM.  We can't copy it, remember?  It's shadowed
 ; by the monitor RAM and memory mapped peripherals.
 ;
-;   So the POSTF will fail after the EEPROM is updated, right?  Well, maybe.
+;   So the POST F will fail after the EEPROM is updated, right?  Well, maybe.
 ; Remember that the original version of this code is still in that EEPROM -
 ; it isn't erased after all - so as long as the updater code in the new image
 ; is the same as that in the old image, the checksum will still be valid.

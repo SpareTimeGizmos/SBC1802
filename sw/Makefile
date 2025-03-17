@@ -31,12 +31,16 @@
 # 17-Jan-24	RLA	New file.
 # 17-May-24	RLA	Add BASIC3.
 #  8-Aug-24	RLA	Add music.asm and updater.asm
+# 26-Feb-25	RLA	Add CPUCLOCK parameter
 #--
+
+# SBC1802 assembly options ...
+CPUCLOCK=5000000
 
 # Tool paths and options - you can change these as necessary...
 TASM=D:/bob/bin/tasm/tasm
 export TASMTABS=D:/bob/bin/tasm/
-TASMOPTS=-t1802 -lat -g0 -i -p44 -DTASM -DSBC1802
+TASMOPTS=-t1802 -x1 -lat -g0 -i -p44 -DTASM -DSBC1802 -DCPUCLOCK=$(CPUCLOCK)
 A18=d:/bob/bin/a18
 ROMMERGE=D:/bob/bin/rommerge.exe
 ROMCKSUM=D:/bob/bin/romcksum.exe
