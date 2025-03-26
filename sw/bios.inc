@@ -112,19 +112,28 @@ fgd_f0vec   equ  BIT7               ; extended BIOS vectors at $F000 implemented
 fgd_nbread  equ  BIT8               ; f_nbread implemented
 fgd_sdfun   equ  BIT9		    ; f_sdread/f_sdwrite/f_sdreset implemented
 
-; SBC1802 specific vectors and functions
+; SBC1802 specific vectors and functions ...
+; Program control functions ...
 f_trap	    equ	 (SBIOS+00h)	    ; breakpoint trap entry
 f_continue  equ  (SBIOS+03h)        ; continue after a trap
 f_run       equ  (SBIOS+06h)        ; run a program with P=0
+; TU58 serial tape/disk functions ...
 f_tuinit    equ  (SBIOS+09h)        ; initialize TU58
 f_turead    equ  (SBIOS+0ch)        ; read TU58 sector
 f_tuwrite   equ  (SBIOS+0fh)        ; write TU58 sector
+; SLU1 serial port functions ...
 f_sl1out    equ  (SBIOS+12h)        ; blocking output to SLU1
 f_sl1hit    equ  (SBIOS+15h)        ; test SLU1 for input
 f_sl1in     equ  (SBIOS+18h)        ; blocking read w/o echo
 f_sl1get    equ  (SBIOS+1bh)        ; blocking read with echo
 f_sl1nbr    equ  (SBIOS+1eh)        ; non-blocking read w/o echo
+; 
 f_testhwf   equ  (SBIOS+21h)	    ; test SBC1802 hardware flags
+; Parallel Centronics printer functions ...
+f_prtinit   equ  (SBIOS+24h)	    ; initialize parallel printer
+f_prtchar   equ  (SBIOS+27h)	    ; print one character
+f_prttext   equ  (SBIOS+2ah)	    ; print null terminated string
+f_prtstat   equ  (SBIOS+2dh)	    ; return printer status
 
 ; SBC1802 debugger breakpoint (cause a trap to f_trap)...
 #define	BPT	MARK\ SEP 1

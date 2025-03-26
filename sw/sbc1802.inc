@@ -917,6 +917,10 @@ PP.RDYO	 .EQU	BIT4		; READY bit output data
 PP.STBO	 .EQU	BIT5		; STROBE "   "  "    "
 PP.OUTR	 .EQU	BIT6		; set READY mode if BIT2 is set
 PP.OUTS	 .EQU	BIT7		;  "  STROBE  "  "  BIT3 "   "
+PP.SARDY .EQU	$5C		; set ARDY output to 1
+PP.SBRDY .EQU	$5E		;  "  BRDY  "  "  "  "
+PP.CARDY .EQU	$4C		; clear ARDY output to 0
+PP.CBRDY .EQU	$4E		;   "   BRDY  "  "  "  "
 
 ; CDP1851 Control Register interrupt mask bits ...
 ;   After writing this byte to the control register, the software should
@@ -942,7 +946,7 @@ PP.ASIR	 .EQU	BIT2		; A strobe caused port A interrupt request
 PP.BSIS	 .EQU	BIT3		; B  "  "   "  "   "   B  "    "    "   "
 PP.ARDY	 .EQU	BIT4		; A READY  input data
 PP.ASTB	 .EQU	BIT5		; A STROBE   "    "
-PP.BDRY	 .EQU	BIT6		; B READY    "    "
+PP.BRDY	 .EQU	BIT6		; B READY    "    "
 PP.BSTB	 .EQU	BIT7		; B STROBE   "    "
 
 	.SBTTL	AY-3-8912 Programmable Sound Generator Definitions

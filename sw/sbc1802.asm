@@ -329,10 +329,21 @@
 ;	   branch off page errors in SL1TST.
 ;
 ; 081	-- Save the console flags in BAUD.1 across reboots.
+;
+; 082	-- Add TEST PRINTER to test the parallel port printer code.
+;
+; 083	-- Fix TEST SLU loopback to work with the new F_NBREAD/F_SL1NBR.
+;	   Fix XMODEM too!
+;
+; 084	-- "ER FFFF" loops forever (watch for wrap around!)
 ;--
-VEREDT	.EQU	81	; and the edit level
+VEREDT	.EQU	84	; and the edit level
 
 ; TODO LIST
+; **** APPROXIMATELY 94 FREE BYTES ARE LEFT IN THIS FIRMWARE!!!! ****
+;
+; ADD "SET RESTART BASIC" TO BOOT INTO BASIC!
+; "EXEC FF" PARSES AS "EX EC FF"!  MUST HAVE SPACE AFTER COMMAND!
 ; MODIFY MICRODOS CONSOLE I/O TO RESPECT FLOW CONTROL AND ALTERNATE CONSOLE??
 ; USE DAVID'S CHECKSUM ALGORITHM?
 ; ADD A PLAY COMMAND TO PLAY MIDITONES DOWNLOADED TO RAM?
@@ -472,12 +483,12 @@ SYSINI:	POST(POSTF)		; POST F - let the world know we're alive
 ; got around to writing any!  We'll just fall into the EPROM checksum test...
 
 ROMCHK:	RCLR(P1)		; checksum from $0000 to $7FFF
-	RCLR(P2)		; and accumulate the checksum in P2
+	RCLR(P4)		; and accumulate the checksum in P4
 	SEX	P1		; use P1 to address memory now
 
-; Read a byte and accumulate a 16 bit checksum in P2...
-ROMCK1: GLO P2\ ADD\ PLO P2	; add another byte from M(R(X))
-	GHI P2\ ADCI 0\ PHI P2	; and propagate any carry bit
+; Read a byte and accumulate a 16 bit checksum in P4...
+ROMCK1: GLO P4\ ADD\ PLO P4	; add another byte from M(R(X))
+	GHI P4\ ADCI 0\ PHI P4	; and propagate any carry bit
 	IRX\ GHI P1\ XRI $80	; have we rolled over from $7FFF to $8000?
 	LBNZ	ROMCK1		; not yet - keep checking
 
@@ -486,12 +497,10 @@ ROMCK1: GLO P2\ ADD\ PLO P2	; add another byte from M(R(X))
 ; even though both should be the same in the BOOT memory map.  Why?  Because
 ; $FFFF doesn't seem to always work.  Don't ask - I don't know why!
 	RLDI(P1,CHKSUM-$8000)	; the checksum lives here in EPROM
-	GHI P2\ SM		; does the high byte match?
-;;TEMPORARY	LBNZ	$		; fail if it doesn't
-	IRX\ GLO P2\ SM		; does the low byte match?
-;;TEMPORARY	LBNZ	$		; fail
-	NOP\ NOP\ NOP	;; TEMPORARY
-	NOP\ NOP\ NOP	;; TEMPORARY
+	GHI P4\ XOR		; does the high byte match?
+	LBNZ	$		; fail if it doesn't
+	IRX\ GLO P4\ XOR	; does the low byte match?
+	LBNZ	$		; fail
 
 ; Fall thru into the MCR/mapping test code...
 
@@ -719,8 +728,8 @@ RAMIN1:	LDI	$00		; set memory to zero
 	RLDI(DP,UTDKEND-1)	; it's easiest to do this backwards
 RAMIN2:	SEX DP\ LDI $FF		; set every byte to $FF
 	STXD\ GLO DP		; ...
-	SMI	LOW(UTDKMAP)	; have we done them all
-	LBDF	RAMIN2		; loop until we have
+;;	SMI	LOW(UTDKMAP)	; have we done them all
+;;	LBDF	RAMIN2		; loop until we have
 
 ; If the year isn't set, then default to the build year for this firmware ...
 	LDI LOW(YEAR)\   PLO DP	; store in the current year
@@ -1157,8 +1166,9 @@ PPITST:	POST(POST7)		; POST code 6 - PPI test
 ; bits are wired up more or less correctly. 
 	SEX PC0\ OUT GROUP	; select the PPI I/O groun
 	 .BYTE	 PPIGRP		; ...
-	OUT	PPICTL		; set port A as output
-	 .BYTE	 PP.SETA|PP.MDOU; ...
+	OUT	PPICTL		; set port A as bit programmable
+	 .BYTE	 PP.SETA|PP.MDBP; ...
+	OUT PPICTL\ .BYTE $FF	; and set all bits to output
 	LDI 0\ PLO P1		; count to 256 here
 PPITS1:	SEX SP\ GLO P1\ STR SP	; put the current count on the stack
 	OUT PPIA\ DEC SP	; write to port A
@@ -2256,9 +2266,10 @@ EROM2:	RCOPY(P2,P3)		; copy the address
 	LDA	P3		; fetch the byte from ROM
 	CALL(THEX2)		; and type that too
 	CALL(TCRLF)		; type a CRLF
-	CALL(P3LEP4)		; have we done the entire range?
+	GHI P3\ LBZ EROM4	; quit if we wrapped from $FFFF -> $0000?
+EROM3:	CALL(P3LEP4)		; have we done the entire range?
 	LBDF	EROM2		; keep typing until we have
-	RETURN			; all done
+EROM4:	RETURN			; all done
 
 	.SBTTL	Deposit EEPROM Command
 
@@ -3102,6 +3113,7 @@ TSTCMD:	CMD(4, "RAM0",   TSTRM0); exhaustive test for RAM0 chip
 	CMD(3, "ROM",    TSTROM); verify ROM/EPROM/EEPROM checksum
 	CMD(3, "PSG",	 TSTPSG); AY-3-8912 sound generator
 	CMD(3, "SLU",	 SLULPB); loop SLU0 and SLU1
+	CMD(3, "PRINTER",TSTPRT); test parallel printer
 	.BYTE	0
 
 	.SBTTL	Show Firmware Version
@@ -4293,6 +4305,41 @@ SHOTA3:	OUTSTR(NOTAPE)		; here if unit 1 is offline
 TU58ID:	.TEXT	" TU58 serial\000"
 NOTAPE:	.TEXT	"OFFLINE\r\n\000"
 
+	.SBTTL	TEST PRINTER Command
+
+;++
+;   The "TEST PRINTER" command tests the Centronics parallel printer interface.
+; It just continuously prints all ASCII characters from space, 0x20, to 0x7F
+; over and over again.  This works best if the printer has line wrap enabled!
+;
+;	>>>TEST PRINTER
+;
+;   Press any key to interrupt the operation.
+;--
+TSTPRT:	CALL(CHKEOL)		; this should be the end of the line
+	CALL(HWTEST)		; make sure the CDP1851 PPI is installed
+	.WORD	HWPPI		; ...
+	CALL(F_PRTINIT)		; try to initialize the parallel printer
+	LBDF	NOPRINT		; branch if error
+	OUTSTR(MTSMS3)		; "Press any key to abort ..."
+
+; Print all ASCII characters 0x20..0x7F over and over ...
+TSTPR1:	LDI ' '\ PLO P2		; start with a space
+TSTPR2:	CALL(F_BRKTEST)		; should we stop now?
+	LBDF	TSTPR9		; just return if so
+	GLO P2\ CALL(F_PRTCHAR)	; print the next character
+	LBDF	NOPRINT		; branch if printer timeout
+	ADI 1\ ANI $7F\ PLO P2	; increment the character and wrap around
+	LBNZ	TSTPR2		; keep printing
+	LBR	TSTPR1		; start over again with space
+
+; Here for any printer error ...
+NOPRINT:OUTSTR(NPRMSG)		; "?PRINTER ERROR"
+TSTPR9:	RETURN			; and back to the command scanner
+
+; Messages
+NPRMSG:	.TEXT	"?PRINTER ERROR\r\n\000"
+
 	.SBTTL	TEST PSG Command
 
 ;++
@@ -4590,7 +4637,7 @@ SLULPB:	CALL(CHKEOL)		; no more arguments
 	ANI $FE\ PHI BAUD	; and turn off SLU0 echo
 
 ; Try to read (non-blocking!) from SLU0 and copy to SLU1 ...
-SLOOP1:	CALL(F_NBREAD)		; non-blocking read from SLU0
+SLOOP1:	RCLR(P3)\ CALL(F_NBREAD); non-blocking read from SLU0
 	LBNF	SLOOP2		; go test SLU1 if nothing is there
 	PLO BAUD\ SMI $1C	; was Control-\ typed ?
 	LBZ	SLOOP3		; yes - exit loop back mode
@@ -4598,7 +4645,7 @@ SLOOP1:	CALL(F_NBREAD)		; non-blocking read from SLU0
 				; and fall into the SLU1 test nexte
 
 ; Try to read (non-blocking) from SLU1 and copy to SLU0 ...
-SLOOP2:	CALL(F_SL1GET)		; non-blocking read from SLU1
+SLOOP2:	RCLR(P3)\ CALL(F_SL1NBR); non-blocking read from SLU1
 	LBNF	SLOOP1		; loop if nothing was read
 	CALL(F_TTY)		; copy what was read to SLU0
 	LBR	SLOOP1		; and keep looping
@@ -6206,7 +6253,8 @@ XOPENW:	PUSHR(P1)		; save working register
 	GHI BAUD\ ANI $FE 	; turn off echo
 	PHI	BAUD		; ...
 	RLDI(P1,10000)		; 10000 times 1ms delay -> 10 second timeout
-XOPNW1:	CALL(F_NBREAD)		; read a byte from the serial port w/o waiting
+XOPNW1:	RCLR(P3)		; set timeout for NBREAD
+	CALL(F_NBREAD)		; read a byte from the serial port w/o waiting
 	LBNF	XOPNW2		; branch if nothing was read
 	SMI	CH.NAK		; did we get a NAK?
 	LBZ	XOPNW3		;  ... yes - success!

@@ -39,8 +39,10 @@
 #			Add EROM/DROM commands.
 # 10-AUG-24	RLA	Add FILL, SHOW VERSION, and TEST ROM.
 # 15-AUG-24	RLA	Add TEST SLU.
-# 13-MAR-24	RLA	Add SET SLU0 RTS|NORTS
+# 13-MAR-25	RLA	Add SET SLU0 RTS|NORTS
 #			Add SET CONSOLE SLU0|SLU1
+# 24-MAR-25	RLA	Add TEST PRINTER
+#			Prune stuff to fit in memory!
 #--
 MEMORY AND I/O COMMANDS
     Examine addr		-- examine one byte
@@ -76,7 +78,7 @@ MICRODOS COMMANDS
     UBoot		-- boot from virtual diskette 0
 
 SET COMMANDS
-    SEt Q 1|0|TOGGLE		-- set, reset or toggle Q output
+    SEt Q 1|0|TOGgle		-- set, reset or toggle Q
     SEt RTC mm/dd/yyyy hh:mm:ss	-- set RTC date and time
     SEt YEar yyyy		-- update the RTC year
     SEt OStype ELFos|MICrodos	-- select the memory map
@@ -84,7 +86,7 @@ SET COMMANDS
     SEt SLU1 bbbbb [xYz]	-- set SLU1 baud and format
     SEt SLU0 RTS|NORTS		-- enable or disable flow control
     SEt CONsole SLU0|SLU1	-- redirect console to SLU1
-    SEt REStart ddd		-- auto boot from device on power up
+    SEt REStart ddd		-- auto boot from device
     SEt REStart xxxx		-- start program on power up
     SEt NOREStart		-- power up to this monitor
 
@@ -106,11 +108,12 @@ SHOW COMMANDS
 TEST COMMANDS
     TEst RAM0|RAM1	-- test RAM chip
     TEst ROM		-- test ROM chip
-    TEst PSG		-- test sound generator chip
+    TEst PSG		-- test sound generator
     TEst SLU		-- loop SLU0 and SLU1
+    TEst PRInter	-- test parallel printer
 
 OTHER COMMANDS
     HElp		-- print this text
     ; any text		-- comment command procedures
     ^C			-- cancel current command line
-    <BREAK>		-- interrupt execution of long commands
+    <BREAK>		-- interrupt execution

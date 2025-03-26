@@ -222,8 +222,20 @@
 ;	   also check whether SLU1 is being used as an alternate console.
 ;
 ; 064	-- TUINIT accidentally corrupts the control register of SLU1!
+;
+; 065	-- Add parallel printer functions F_PRTINIT, F_PRTCHAR, F_PRTTEXT, and
+;	   F_PRTSTAT.
+;
+; 066	-- Remove F_FINDTKN and F_IDNUM and make them unimplemented.  Change
+;	   F_RDNVR, F_WRNVR, and F_NVRCCHK to always return failure (DF=1)
+;	   but they are not actually unimplemented.
+;
+; 067	-- Change F_NBREAD and F_SL1NBR to implement a timeout so as to agree
+;	   with David's MBIOS.
+;
+; 068	-- TUINIT corrupts EEPROM!  Missing a SEX SP ...
 ;--
-VEREDT	.EQU	64	; and the edit level
+VEREDT	.EQU	67	; and the edit level
 
 ;TODO
 
@@ -240,22 +252,21 @@ VEREDT	.EQU	64	; and the edit level
 ;	- hardware independent BIOS routines
 ;	- console UART primitives, console I/O routines
 ;	- console line input w/editing (F_INPUTL)
-;
-;	... approximately 162 bytes free
+;	... approximately 255 bytes free
 ;
 ; $F800	- extended BIOS entry vectors
 ;	- CDP1879 real time clock code
+;	- parallel (Centronics) printer support
 ;	- IDE/ATA disk code
 ;	- TU58 serial tape or disk code
 ;	- disk/tape bootstrap
-;
-;	... approximately 418 bytes free
+;	... approximately 98 bytes free
 ;
 ; $FE00	- RAMPAGE, MCR, CDP1877 PIC, and CDP1879 RTC
 ;
 ; $FF00	- primary BIOS entry vectors
 ; 	- SCRT routines, F_FREEMEM and F_GETDEV
-;	... approximately 32 bytes free
+;	... approximately 35 bytes free
 ; $FFE0	- LBR to the SCRT "CALL" routine
 ; $FFF1	- LBR to the SCRT "RETURN" routine
 ; $FFF7	- pointer to BIOS copyright notice (2 bytes)
@@ -283,10 +294,6 @@ VEREDT	.EQU	64	; and the edit level
 ;
 ; These are also defined in SBC1802.INC.  Note that this RAM space and these
 ; peripherals are mapped in ALL memory maps.
-;
-;TODO
-; REMOVE f_findtkn, and f_idnum AND CHANGE THEM TO RAM LOADABLE VECTORS?
-; ADD VECTORS FOR THEM TO $FExx RAM AND INITIALIZE TO MINIMON/TRAP?
 ;--
 
 	.SBTTL	SBC1802 Specific Entry Vectors
@@ -323,6 +330,11 @@ VEREDT	.EQU	64	; and the edit level
 	BENTRY(F_SL1NBR,    SL1NBR)	; non-blocking read w/o echo
 ; Other SBC1802 specific functions ...
 	BENTRY(F_TESTHWF,   TESTHW)	; test SBC1802 hardware flags
+; Parallel (Centronics) printer functions ...
+	BENTRY(F_PRTINIT,   PRTINIT)	; initialize parallel port and printer
+	BENTRY(F_PRTCHAR,   PRTCHAR)	; print one ASCII character
+	BENTRY(F_PRTTEXT,   PRTTEXT)	; print null terminated string
+	BENTRY(F_PRTSTAT,   PRTSTAT)	; return printer status bits
 
 ;   The copyright notice always follows the last SBC1802 vector.  There's also a
 ; BIOS version number, but that's located at the end of this file (right before
@@ -673,18 +685,6 @@ CONGET:	GHI BAUD\ ANI BD.ALT	; is the alternate console selected?
 	LBDF	CONOUT		; echo it if required
 	RETURN			; or return without echo
 
-;   Non-blocking read one character from the console.  If no character is
-; waiting in the UART buffer, then return immediately with DF=0.  If there
-; is a character, then read it, echo it according to BAUD.1, and return
-; it with DF=1.
-NBREAD:	GHI BAUD\ ANI BD.ALT	; alternate console selected?
-	LBNZ	SL1NBR		; yes - use SLU1
-	CALL(CONHIT)		; see if a character is waiting
-	LBNF	NBREA1		; return with DF=0 if nothing there
-	CALL(CONGET)		; actually read the character and echo
-	SDF			; make sure DF=1
-NBREA1:	RETURN			; and we're done	
-
 	.SBTTL	Set Console UART Baud Rate
 
 ;++
@@ -861,14 +861,50 @@ SL1GET:	CALL(SL1IN)		; read a character
 	LBDF	SL1OUT		; echo it if required
 	RETURN			; or return without echo
 
-;   Non-blocking read one character from the auxiliary UART.  If no character
-; is waiting in the UART buffer, then return immediately with DF=0.  If there
-; is a character, then read it, echo it, and return it with DF=1.
-SL1NBR:	CALL(SL1HIT)		; see if a character is waiting
-	LBNF	SL1NB1		; return with DF=0 if nothing there
-	CALL(SL1GET)		; actually read the character and echo
+	.SBTTL	Non-Blocking Serial Port Read
+
+;++
+;   The F_NBREAD call (and the F_SL1NBR call for SLU1) tries to read one
+; character from the serial port, but with a timeout.  If no character is
+; received within the specified period then this call returns immediately with
+; DF=0.  If there is a character, then we read it, echo it according to BAUD.1,
+; and return it in with DF=1.
+;
+;CALL:
+;	<P3 contains the timeout, in milliseconds>
+;	CALL(F_NBREAD)
+;	<return with DF=1 and character in D, otherwise timeout and DF=0>
+;
+;   Yes, DF=1 for success and DF=0 for timeout ("failure").  That's the opposite
+; of the usual BIOS convention, but it's consistent with the way F_BTEST, UTEST,
+; and BRKTEST work.  
+;
+;   And note that the timeout passed in P3 is in milliseconds, which gives a
+; maximum wait of just over one minute.  Zero implies no wait, and F_NBREAD
+; returns immediately if no character is available.
+;--
+NBREAD:	GHI BAUD\ ANI BD.ALT	; alternate console selected?
+	LBNZ	SL1NBR		; yes - use SLU1
+NBREA1:	CALL(CONHIT)		; see if a character is waiting
+	LBDF	NBREA3		; branch if there's something there
+	GLO P3\ LBNZ NBREA2	; has the timeout expired?
+	GHI P3\ LBZ NBREA9	; yes - return DF=0 and quit now
+NBREA2:	DLY1MS			; wait for 1ms
+	DEC P3\ LBR NBREA1	; decrement the timeout and try again
+NBREA3:	CALL(CONGET)		; character waiting - read it and echo
 	SDF			; make sure DF=1
-SL1NB1:	RETURN			; and we're done	
+NBREA9:	RETURN			; and we're done	
+
+
+; This function is identical to NBREAD, but for SLU1 ...
+SL1NBR:	CALL(SL1HIT)		; see if a character is waiting
+	LBDF	SL1NB3		; branch if there's something there
+	GLO P3\ LBNZ SL1NB2	; has the timeout expired?
+	GHI P3\ LBZ NBREA9	; yes - return DF=0 and quit now
+SL1NB2:	DLY1MS			; delay for 1 millisecond
+	DEC P3\ LBR SL1NBR	; decrement the timeout and keep trying
+SL1NB3:	CALL(SL1GET)		; actually read the character and echo
+	SDF\ RETURN		; return DF=1 and we're done
 
 	.SBTTL	Console Output Primitives
 
@@ -1147,8 +1183,8 @@ BIN2B2:	ADI	10		; restore the remainder
 	BENTRY(F_USETBD,  CONSET)	; set console baud rate and format
 	BENTRY(F_GETTOD,  GTOD)		; get current time of day
 	BENTRY(F_SETTOD,  STOD)		; set  "   "    "   "  "
-	BUNIMP(F_RDNVR)			; read bytes from NVR
-	BUNIMP(F_WRNVR)			; write bytes to NVR
+	BENTRY(F_RDNVR,   ERRRET)	; read bytes from NVR
+	BENTRY(F_WRNVR,   ERRRET)	; write bytes to NVR
 	BUNIMP(F_IDESIZE)		; deprecated
 	BUNIMP(F_IDEID)			; deprecated
 	BUNIMP(F_DTTOAS)		; convert date buffer to ASCII
@@ -1156,9 +1192,14 @@ BIN2B2:	ADI	10		; restore the remainder
 	BUNIMP(F_RTCTEST)		; test for existence of RTC
 	BUNIMP(F_ASTODT)		; convert ASCII date to binary
 	BUNIMP(F_ASTOTM)		;  "   "    "   time  "   "
-	BUNIMP(F_NVRCCHK)		; compute checksum for NVR
+	BENTRY(F_NVRCCHK, ERRRET)	; compute checksum for NVR
 
-	.SBTTL	CDP1879 Real Time Clock Calendar Support
+;   Here to return failure (DF=1) - this is used for the functions that are
+; not in this BIOS but which are not officially unimplemented.  That's mostly
+; the NVR functions in our case...
+ERRRET:	SDF\ RETURN
+
+	.SBTTL	Get CDP1879 RTC Time and Date
 
 ;++
 ;   The time and date routines, GTOD and STOD, operate with a time buffer
@@ -1217,6 +1258,7 @@ GTOD:	CALL(F_TESTHWF)		; test the hardware configuration flags
 	IRX\ POPRL(DP)\ CDF	; restore DP and return DF=0 for success
 RTCRET:	RETURN			; and we're finally done!
 
+	.SBTTL	Set CDP1879 RTC Time and Date
 
 ;++
 ;   STOD sets the CDP1879 clock based on the information in the time buffer
@@ -1265,6 +1307,147 @@ STOD1:	LDI LOW(RTCBASE+RTCHRS)	; the hours register is next
 	STR	DP		;  ... to release the "freeze" circuit
 	IRX\ POPRL(DP)\ CDF	; restore DP and return DF=0 for success
 	RETURN			; and we're done!
+
+	.SBTTL	Initialize Parallel Printer
+
+;++
+;   This routine will initialize the parallel port printer interface.  It
+; configures the CDP1851 PPI properly to talk to the printer, asserts the
+; SELECT OUT and INIT lines, waits a moment for the printer to reset, and
+; then checks for a SELECT IN response from the printer.  It returns DF=0
+; if all is well, and DF=1 if there's a problem.
+;
+;CALL:
+;	CALL(F_PRTINIT)
+;	<return DF=1 if error>
+;
+; FYI - here are the PPI pins and the corresponding Centronics signals ...
+;
+;	PPI PIN	PPI DIR		CENTRONICS SIGNAL
+;	------	-------		-------------------
+;	PA0..7	output		data 0..7
+;	ARDY	output		STROBE (inverted!)
+;	ASTB	input		ACK (inverted!)
+;	BRDY	output		AUTO LF
+;	BSTB	input		BUSY
+;	PB0	output		INIT
+;	PB1	output		SELECT OUT
+;	PB2	input		SELECT IN
+;	PB3	input		ERROR
+;	PB4	input		PAPER OUT
+;	PB5..7	input		unused
+;--
+PRTINIT:CALL(F_TESTHWF)		; make sure the CDP1851 is installed
+	 .BYTE	H0.PPI,0	; ...
+	LBDF	PRTIN9		; no PPI - just give up now!
+	PUSHR(T1)		; save a temporary register
+	OUTI(GROUP,PPIGRP)	; select the PPI I/O group
+;   Set port A to bit programmable mode and make all bits output.  Note that
+; we must use the bit programmable mode instead of simple output mode so we
+; can gain control of the ARDY and ASTROBE pins!
+	OUT PPICTL\ .BYTE PP.SETA|PP.MDBP	; set port A mode
+	OUT PPICTL\ .BYTE $FF			; all pins are outputs
+	OUT PPICTL\ .BYTE PP.CARDY		; and clear STROBE
+; Set port B to bit programmable mode and make bits 0..1 outputs.
+	OUT PPICTL\ .BYTE PP.SETB|PP.MDBP	; set port B mode
+	OUT PPICTL\ .BYTE $03			; pins 0..1 output
+	OUT PPICTL\ .BYTE PP.SBRDY		; set AUTO LF
+; Set SELECT OUT and INIT, wait, and then clear INIT ...
+	OUT PPIB\ .BYTE $03	; assert SELECT OUT and INIT
+	DLY1MS			; short delay
+	OUT PPIB\ .BYTE $02	; clear INIT but leave SELECT OUT set
+; Now wait for the printer to respond with SELECT IN ...
+	RLDI(T1,1000)		; wait for 1 second maximum
+PRTIN1:	DLY1MS			; ...
+	SEX SP\ INP PPIB	; read the printer status
+	ANI $04\ LBNZ PRTIN2	; did we find SELECT IN??
+	DBNZ(T1,PRTIN1)		; no - wait a little longer
+	SDF\ LSKP		; the printer must be turned off
+; Success!
+PRTIN2:	CDF			; return DF=0
+	IRX\ POPRL(T1)		; restore T1
+PRTIN9:;;OUTI(GROUP,BASEGRP)	; select the base group again
+	RETURN			; and we're done
+
+	.SBTTL	Print Characters and Strings
+
+;++
+;   This routine will print a single character to the parallel port printer.
+; It waits for the printer not to be busy, outputs the data, pulses the STROBE
+; signal, and then waits for the printer to assert BUSY.  Note that this
+; assumes that you've called F_PRTINIT first.  This routine doesn't actually
+; check that the PPI is installed, but it does have a timeout and will return
+; with DF=1 if the printer doesn't respond.
+;
+;CALL:
+;	D -> character to print
+;	CALL(F_PRTCHAR)
+;	<return DF=1 if error, D is preserved>
+;--
+PRTCHAR:PLO	BAUD			; save the character to print
+	PUSHR(T1)\ RCLR(T1)		; keep the timeout in T1
+	OUTI(GROUP,PPIGRP)		; select the PPI/printer group
+
+; Wait for BUSY to be clear ...
+PRTCH1:	SEX SP\ INP PPISTS		; read the status register
+	ANI PP.BSTB\ LBZ PRTCH2		; wait for BUSY clear
+	DBNZ(T1,PRTCH1)			; decrement the timeout and keep waiting
+	LBR	PRTCH4			; timeout!
+
+; Output the data and assert STROBE ...
+PRTCH2:	GLO BAUD\ STR SP		; get the original character back
+	OUT PPIA\ DEC SP		; write the data to port A
+	OUTI(PPICTL,PP.SARDY)		; set ARDY/STROBE
+	DLY1MS				; make a 1ms STROBE pulse
+	OUT PPICTL\ .BYTE PP.CARDY	; and then clear ARDY/STROBE
+
+; Now wait for BUSY to be set ...
+PRTCH3:	SEX SP\ INP PPISTS		; read the printer status again
+	ANI PP.BSTB\ LBNZ PRTCH5	; wait for BUSY to set this time
+	DBNZ(T1,PRTCH3)			; count down and wait
+PRTCH4:	SDF\ LSKP			; timeout!
+PRTCH5:	CDF				; success!
+	IRX\ POPRL(T1)			; restore T1
+	GLO BAUD\ RETURN		; and we're done
+
+
+;++
+;   This routine sends a null terminated string to the printer, similar to
+; F_MSG.  It just calls PRTCHAR in a loop ...
+;
+;CALL:
+;	P1 -> address of null terminated string
+;	CALL(F_PRTTEXT)
+;	<return DF=1 if error>
+;--
+PRTTEXT:LDA	P1		; get the next character to print
+	LBZ	PRTTX1		; branch if we're done
+	CALL(PRTCHAR)		; nope - print this one
+	LBNF	PRTTEXT		; and keep printing
+PRTTX1:	RETURN			; here when we find a null
+
+	.SBTTL	Return Printer Status
+
+;++
+;   This routine will return the current printer status bits, especially the
+; PAPER OUT, SELECT IN and ERROR bits.  Note that it does not return the BUSY
+; nor the ACK bits!
+;
+;CALL:
+;	CALL(F_PRTSTAT)
+;	<return status bits in D>
+;
+; The bits in D correspond to -
+;
+;	D0..D1 -> unused
+;	D2 -> selected (i.e. printer present and turned on)
+;	D3 -> printer error
+;	D4 -> out of paper
+;	D5..D7 -> unused
+;--
+PRTSTAT:OUTI(GROUP,PPIGRP)	; select the PPI I/O group
+	SEX SP\ INP PPIB	; and return the status bits
+	RETURN			; return those and we're done!
 
 	.SBTTL	Read/Write IDE/ATA Disk Drive Sectors
 
@@ -1857,7 +2040,7 @@ DLY101:	DLY1MS			; spin for 1ms
 ;--
 TUGET:	RLDI(T2,TUTIMO)		; this is the timeout loop counter
 	OUTI(GROUP,SL1GRP)	; select the SLU1 I/O group
-TUGET1:	INP	SL1STS		; [4] have we received anything?
+TUGET1:	SEX SP\ INP SL1STS	; [4] have we received anything?
 	SHR			; [2] put the DA bit in the DF
 	LBNF	TUGET2		; [3] nope - check for timeout
 	INP	SL1BUF		; get the byte received
@@ -2266,11 +2449,11 @@ MDWR1:	CALL(MDTYPE)		; same as MDREAD ...
 	BENTRY(F_INMSG,    INLMSG)	; type an ASCIZ string "in line"
 	BENTRY(F_INPUTL,   INPUTL)	; read a line from the console
 	BENTRY(F_BRKTEST,  CONHIT)	; return DF=1 if console has input
-	BENTRY(F_FINDTKN,  tokenfunc)	; search table for token
+	BUNIMP(F_FINDTKN)		; search table for token
 	BENTRY(F_ISALPHA,  isalpha)	; DF=1 if D contains alphabetic char
 	BENTRY(F_ISHEX,    ishex)	; DF=1 if D contains hexadecimal char
 	BENTRY(F_ISALNUM,  isalnum)	; DF=1 if D contains alphanumeric char
-	BENTRY(F_IDNUM,    idnum)	; identify symbol as dec, hex or other
+	BUNIMP(F_IDNUM)			; identify symbol as dec, hex or other
 	BENTRY(F_ISTERM,   isterm)	; DF=1 if D contains non-alphanumeric
 	BENTRY(F_GETDEV,   GETDEV)	; return supported device map
 	BENTRY(F_NBREAD,   NBREAD)	; non-blocking read from console
