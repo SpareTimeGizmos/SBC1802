@@ -10,7 +10,7 @@
 ;   Y88b  d88P 888   d88P Y88b  d88P   888  Y88b  d88P Y88b  d88P 888"       
 ;    "Y8888P"  8888888P"   "Y8888P"  8888888 "Y8888P"   "Y8888P"  888888888  
 ;
-;         Copyright (C) 2021-2024 By Spare Time Gizmos, Milpitas CA.
+;         Copyright (C) 2021-2025 By Spare Time Gizmos, Milpitas CA.
 
 ;++
 ;   This program is free software; you can redistribute it and/or modify
@@ -336,8 +336,14 @@
 ;	   Fix XMODEM too!
 ;
 ; 084	-- "ER FFFF" loops forever (watch for wrap around!)
+;
+; 085	-- Add a width parameter to TEST PRINTER
+;
+; 086	-- Change the CDP1878 CTC POST to use timer B rather than timer A.
+;	   That's because timer A can no longer be clocked by SYSCLK (at 5MHz
+;	   it's just too fast!).
 ;--
-VEREDT	.EQU	84	; and the edit level
+VEREDT	.EQU	86	; and the edit level
 
 ; TODO LIST
 ; **** APPROXIMATELY 94 FREE BYTES ARE LEFT IN THIS FIRMWARE!!!! ****
@@ -1320,11 +1326,11 @@ NOSLU1:	SEX	PC0		; restore the default I/O group select
 
 ;++
 ;   Post 5 tests the CDP1878 dual counter/timer chip.  In the SBC1802, timer A
-; is clocked by the CPU clock (2.5MHz, more or less) and timer B is clocked by
-; the baud clock/4 (1.2288MHz).  The CPU clock might vary if you change the
-; crystal, but the baud clock should never change.  
+; is clocked by TPA (the CPU clock/8, or 625kHz with a 5MHz crystal) and timer
+; B is clocked by the baud clock/4 (1.2288MHz).  The CPU clock might vary if
+; you change the crystal, but the baud clock should never change.  
 ;
-;   This code just tests timer A by initializing it to one shot mode, waiting
+;   This code just tests timer B by initializing it to one shot mode, waiting
 ; for it to count down to zero, and then verifying that an interrupt request is
 ; generated.  That's pretty much all we can do - there's no way to write an
 ; arbitrary value to a timer register and then read it back.  We can read back
@@ -1340,15 +1346,15 @@ CTCTST:	POST(POST5)		; POST code - CTC test
 	SEX PC0\ OUT GROUP	; select the CTC group
 	 .BYTE	 TMRGRP		; ...
 
-; Load timer A with a short count (257 in this case) ...
-	OUT TMRAHI\ .BYTE 1	; load timer A high
-	OUT TMRALO\ .BYTE 1	;  ... and timer B low
+; Load timer B with a short count (257 in this case) ...
+	OUT TMRBHI\ .BYTE 1	; load timer B high
+	OUT TMRBLO\ .BYTE 1	;  ... and timer B low
 	B_TMRIRQ NOCTC		; should be no timer IRQ now
 	SEX SP\ INP TMRSTS	; read the timer status too
 	LBNZ	NOCTC		; and both IRQ bits should be cleared
 
-; Start timer A running in one shot mode ...
-	SEX PC0\ OUT TMRCRA	; write control register A
+; Start timer B running in one shot mode ...
+	SEX PC0\ OUT TMRCRB	; write control register B
 	 .BYTE	 TM.JAM|TM.IE|TM.GPOS|TM.TMO|TM.GO
 
 ;   Now wait for the timer IRQ, but be careful not to wait forever just in case
@@ -1363,11 +1369,11 @@ CTCTS1:	B_TMRIRQ CTCTS2		; branch when the IRQ sets
 ;   The timer has timed out.  Read the counter registers and verify that they
 ; have both rolled over to $FF.  Turn off the interrupt enable and verify that
 ; the IRQ goes away.
-CTCTS2:	SEX SP\ INP TMRAHI	; read counter A MSB
+CTCTS2:	SEX SP\ INP TMRBHI	; read counter B MSB
 	XRI $FF\ LBNZ NOCTC	; it should be $FF
-	INP	TMRALO		; and read counter A LSB
+	INP	TMRBLO		; and read counter B LSB
 	XRI $FF\ LBNZ NOCTC	; and it should be $FF too
-	SEX PC0\ OUT TMRCRA	; stop the counter and disable interrupts
+	SEX PC0\ OUT TMRCRB	; stop the counter and disable interrupts
 	 .BYTE	 TM.JAM|TM.GPOS|TM.TMO
 	NOP\ NOP		; give it a second
 	B_TMRIRQ NOCTC		; the IRQ should go away now
@@ -2961,7 +2967,7 @@ DEVNMS	.TEXT	"ID0\000ID1\000TU0\000TU1\000"
 ; it's starting address using R0 as the PC.  The rest takes care of itself.
 ;--
 RBASIC:	CALL(CHKEOL)		; no arguments for this command
-	RLDI(R0,BASIC)		; load the BASIC entry point
+RBASI1:	RLDI(R0,BASIC)		; load the BASIC entry point
 	LDI	MC.ROM0		; run with the ROM0 memory map
 	LBR	F_RUN		; and away we go!
 
@@ -3984,7 +3990,8 @@ SHOOS1:	OUTSTR(OSNELOS)\ RETURN	; say "ELFOS"
 ;
 ;   The first option, SET RESTART xxxx, obviously depends on there being some
 ; kind of restart routine stored in memory at a fixed address.  This routine
-; is started with the equivalent of a RUN command (i.e. P=0).
+; is started with the equivalent of a RUN command (i.e. P=0) AND with the
+; EPROM still mapped!
 ;
 ;   The second one allows you to specify any mass storage device, ID0, ID1,
 ; TU0 or TU1, as the restart device.  We're very fortunate that NONE of these
@@ -4312,13 +4319,27 @@ NOTAPE:	.TEXT	"OFFLINE\r\n\000"
 ; It just continuously prints all ASCII characters from space, 0x20, to 0x7F
 ; over and over again.  This works best if the printer has line wrap enabled!
 ;
-;	>>>TEST PRINTER
+;	>>>TEST PRINTER [<width>]
 ;
-;   Press any key to interrupt the operation.
+;   The <width> parameter specifies the printer line width, in decimal, from
+; 1 to 255.  Press any key to interrupt the operation.
+;
+;   Register usage -
+;	P2.0 -> current character being printed, 32..255
+;	P3.0 -> current line width
+;	P3.1 -> printer width
 ;--
-TSTPRT:	CALL(CHKEOL)		; this should be the end of the line
-	CALL(HWTEST)		; make sure the CDP1851 PPI is installed
-	.WORD	HWPPI		; ...
+TSTPRT:	LDI 40\ PHI P3		; set the default line width
+	LDI 0\ PLO P3		; ...
+	CALL(ISEOL)		; is there a width parameter
+	LBDF	TSTPR0		; no - go initialize the printer
+	CALL(DECNW)		; yes - scan a decimal number
+	GLO P2\ PHI P3		; and save that
+	CALL(CHKEOL)		; now this should be the end of the line
+
+; Initialize the printer interface ...
+TSTPR0:	CALL(HWTEST)		; make sure the CDP1851 PPI is installed
+	 .WORD	 HWPPI		; ...
 	CALL(F_PRTINIT)		; try to initialize the parallel printer
 	LBDF	NOPRINT		; branch if error
 	OUTSTR(MTSMS3)		; "Press any key to abort ..."
@@ -4329,9 +4350,16 @@ TSTPR2:	CALL(F_BRKTEST)		; should we stop now?
 	LBDF	TSTPR9		; just return if so
 	GLO P2\ CALL(F_PRTCHAR)	; print the next character
 	LBDF	NOPRINT		; branch if printer timeout
-	ADI 1\ ANI $7F\ PLO P2	; increment the character and wrap around
-	LBNZ	TSTPR2		; keep printing
-	LBR	TSTPR1		; start over again with space
+	INC P2\ INC P3		; increment the character and position
+	GLO P2\ LBNZ TSTPR3	; has the ASCII code wrapped around?
+	LDI ' '\ PLO P2		; yes - start over with space
+TSTPR3:	GLO P3\ STR SP\ SEX SP	; put the current column on the stack
+	GHI P3\ SD\ LBL TSTPR2	; have we exceeded the line width?
+	LDI	CH.LFD		; yes - print a line feed
+	CALL(F_PRTCHAR)		; ...
+	LBDF	TSTPR9		; just return if so
+	LDI 0\ PLO P3		; reset the current column
+	LBR	TSTPR2		; and keep printing
 
 ; Here for any printer error ...
 NOPRINT:OUTSTR(NPRMSG)		; "?PRINTER ERROR"
@@ -5181,7 +5209,7 @@ LDNOTE:	ADI	PSGKEY		; transpose the note if desired
 ;--
 PSGKEY	.EQU	-36+12
 MIDINOTE:
-;		   A      A#     B     C      C#      D      D#     E      F      F#     G      G#
+;		   C      C#     D      D#     E      F      F#     G      G#     A      A#     B
 	.WORD	 4697,  4433,  4184,  3950,  3728,  3519,  3321,  3135,  2959,  2793,  2636,  2488
 	.WORD	 2348,  2217,  2092,  1975,  1864,  1759,  1661,  1567,  1479,  1396,  1318,  1244
 	.WORD	 1174,  1108,  1046,   987,   932,   880,   830,   784,   740,   698,   659,   622

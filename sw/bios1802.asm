@@ -234,8 +234,11 @@
 ;	   with David's MBIOS.
 ;
 ; 068	-- TUINIT corrupts EEPROM!  Missing a SEX SP ...
+;
+; 069	-- For some printers the BUSY pulse is shorter than the time it took us
+;	   to detect it!  Rewrite the PRTCHAR code to work with these printers.
 ;--
-VEREDT	.EQU	67	; and the edit level
+VEREDT	.EQU	68	; and the edit level
 
 ;TODO
 
@@ -1326,16 +1329,20 @@ STOD1:	LDI LOW(RTCBASE+RTCHRS)	; the hours register is next
 ;	PPI PIN	PPI DIR		CENTRONICS SIGNAL
 ;	------	-------		-------------------
 ;	PA0..7	output		data 0..7
-;	ARDY	output		STROBE (inverted!)
-;	ASTB	input		ACK (inverted!)
-;	BRDY	output		AUTO LF
-;	BSTB	input		BUSY
-;	PB0	output		INIT
-;	PB1	output		SELECT OUT
-;	PB2	input		SELECT IN
-;	PB3	input		ERROR
-;	PB4	input		PAPER OUT
+;	ARDY	output		STROBE H
+;	ASTB	input		ACK H
+;	BRDY	output		AUTO LF L
+;	BSTB	input		BUSY H
+;	PB0	output		INIT L
+;	PB1	input		SELECT IN H
+;	PB2	output		SELECT OUT L
+;	PB3	input		ERROR L
+;	PB4	input		PAPER OUT L
 ;	PB5..7	input		unused
+;
+;   Note that STROBE and ACK are both active low at the connector, however the
+; SBC1802 inverts both of these signals.  All the rest appear at the PPI pins
+; exactly as they do at the connector.
 ;--
 PRTINIT:CALL(F_TESTHWF)		; make sure the CDP1851 is installed
 	 .BYTE	H0.PPI,0	; ...
@@ -1348,19 +1355,20 @@ PRTINIT:CALL(F_TESTHWF)		; make sure the CDP1851 is installed
 	OUT PPICTL\ .BYTE PP.SETA|PP.MDBP	; set port A mode
 	OUT PPICTL\ .BYTE $FF			; all pins are outputs
 	OUT PPICTL\ .BYTE PP.CARDY		; and clear STROBE
-; Set port B to bit programmable mode and make bits 0..1 outputs.
+; Set port B to bit programmable mode and make bits 0 & 2 outputs.
 	OUT PPICTL\ .BYTE PP.SETB|PP.MDBP	; set port B mode
-	OUT PPICTL\ .BYTE $03			; pins 0..1 output
-	OUT PPICTL\ .BYTE PP.SBRDY		; set AUTO LF
-; Set SELECT OUT and INIT, wait, and then clear INIT ...
-	OUT PPIB\ .BYTE $03	; assert SELECT OUT and INIT
+	OUT PPICTL\ .BYTE $05			; pins 0 & 2 are outputs
+	OUT PPICTL\ .BYTE PP.SBRDY		; disable AUTO LF
+;   Set SELECT OUT and INIT, wait, and then clear INIT ...  Remember that
+; SELECT OUT and INIT are both active low!
+	OUT PPIB\ .BYTE $00	; assert SELECT OUT and INIT
 	DLY1MS			; short delay
-	OUT PPIB\ .BYTE $02	; clear INIT but leave SELECT OUT set
+	OUT PPIB\ .BYTE $01	; clear INIT but leave SELECT OUT set
 ; Now wait for the printer to respond with SELECT IN ...
 	RLDI(T1,1000)		; wait for 1 second maximum
 PRTIN1:	DLY1MS			; ...
 	SEX SP\ INP PPIB	; read the printer status
-	ANI $04\ LBNZ PRTIN2	; did we find SELECT IN??
+	ANI $02\ LBNZ PRTIN2	; did we find SELECT IN??
 	DBNZ(T1,PRTIN1)		; no - wait a little longer
 	SDF\ LSKP		; the printer must be turned off
 ; Success!
@@ -1391,14 +1399,16 @@ PRTCHAR:PLO	BAUD			; save the character to print
 ; Wait for BUSY to be clear ...
 PRTCH1:	SEX SP\ INP PPISTS		; read the status register
 	ANI PP.BSTB\ LBZ PRTCH2		; wait for BUSY clear
+	DLY1MS				; give the printer some time
 	DBNZ(T1,PRTCH1)			; decrement the timeout and keep waiting
 	LBR	PRTCH4			; timeout!
 
-; Output the data and assert STROBE ...
+;   Output the data and assert STROBE ...   Note that the minimum STROBE width
+; is 750ns.  Even at 5MHz, one CDP1805 instruction (2 major cycles) is 3.2us -
+; that's plenty!!
 PRTCH2:	GLO BAUD\ STR SP		; get the original character back
 	OUT PPIA\ DEC SP		; write the data to port A
 	OUTI(PPICTL,PP.SARDY)		; set ARDY/STROBE
-	DLY1MS				; make a 1ms STROBE pulse
 	OUT PPICTL\ .BYTE PP.CARDY	; and then clear ARDY/STROBE
 
 ; Now wait for BUSY to be set ...

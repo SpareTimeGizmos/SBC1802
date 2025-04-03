@@ -110,7 +110,7 @@ TEST COMMANDS
     TEst ROM		-- test ROM chip
     TEst PSG		-- test sound generator
     TEst SLU		-- loop SLU0 and SLU1
-    TEst PRInter	-- test parallel printer
+    TEst PRInter [wid]	-- test parallel printer
 
 OTHER COMMANDS
     HElp		-- print this text
