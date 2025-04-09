@@ -1784,6 +1784,7 @@ MAIN1:	RLDI(SP,STACK)\ SEX SP	; reset the stack pointer to the TOS
 	RLDI(P1,CMDBUF)		; address of the command line buffer
 	RLDI(P3,CMDMAX)		; and the length of the same
 	CALL(F_INPUTL)		; read a command line
+	CALL(TCRLF)		; end the line
 	LBDF	MAIN		; branch if the line was terminated by ^C
 
 ;   Parse the command name, look it up, and execute it.  By convention while

@@ -38,17 +38,17 @@
 CPUCLOCK=5000000
 
 # Tool paths and options - you can change these as necessary...
-TASM=D:/bob/bin/tasm/tasm
-export TASMTABS=D:/bob/bin/tasm/
+TASM=`which tasm`
+export TASMTABS=/usr/local/lib/tasm
 TASMOPTS=-t1802 -x1 -lat -g0 -i -p44 -DTASM -DSBC1802 -DCPUCLOCK=$(CPUCLOCK)
-A18=d:/bob/bin/a18
-ROMMERGE=D:/bob/bin/rommerge.exe
-ROMCKSUM=D:/bob/bin/romcksum.exe
-ROMTEXT=D:/bob/bin/romtext.exe
-ZIP=C:/Program Files/7-Zip/7z.exe
-RM=C:/cygwin64/bin/rm.exe
-ECHO=C:/cygwin64/bin/echo.exe
-DATE=C:/cygwin64/bin/date.exe
+A18=`which a18`
+ROMMERGE=`which rommerge`
+ROMCKSUM=`which romcksum`
+ROMTEXT=`which romtext`
+ZIP=`which zip`
+RM=`which rm`
+ECHO=`which echo`
+DATE=`which date`
 
 # All components of the EPROM image ...
 HEXFILES = sbc1802.hex bios1802.hex ut1802.hex basic3.hex \

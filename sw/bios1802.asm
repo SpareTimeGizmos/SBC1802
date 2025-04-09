@@ -1068,8 +1068,7 @@ INPESC:	LDI	'$'		; echo a '$'
 
 ; Here for RETURN or LINE FEED ...
 INPEOL:	CDF			; return DF=0
-INPUT3:	CALL(TCRLF)		; echo <CRLF> regardless 
-	LDI	0		; then terminate the input string
+INPUT3:	LDI	0		; then terminate the input string
 	STR	P1		; ...
 	IRX\ POPRL(T1)		; restore T1
 	RETURN			; and we're finally done!
