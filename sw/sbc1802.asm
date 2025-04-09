@@ -342,14 +342,21 @@
 ; 086	-- Change the CDP1878 CTC POST to use timer B rather than timer A.
 ;	   That's because timer A can no longer be clocked by SYSCLK (at 5MHz
 ;	   it's just too fast!).
+;
+; 087	-- F_TUINIT will set the H0.TU58 flag if it is successful; no need for
+;	   SHOTAP to do it too.
+;
+; 088	-- The command "EXEC 1234" parses as "EX EC 1234"!  Make COMND require
+;	   a space or EOL after a match!
+;
+; 089	-- All the HELP command output to be interrupted.
 ;--
-VEREDT	.EQU	86	; and the edit level
+VEREDT	.EQU	89	; and the edit level
 
 ; TODO LIST
-; **** APPROXIMATELY 94 FREE BYTES ARE LEFT IN THIS FIRMWARE!!!! ****
+; **** APPROXIMATELY 44 FREE BYTES ARE LEFT IN THIS FIRMWARE!!!! ****
 ;
 ; ADD "SET RESTART BASIC" TO BOOT INTO BASIC!
-; "EXEC FF" PARSES AS "EX EC FF"!  MUST HAVE SPACE AFTER COMMAND!
 ; MODIFY MICRODOS CONSOLE I/O TO RESPECT FLOW CONTROL AND ALTERNATE CONSOLE??
 ; USE DAVID'S CHECKSUM ALGORITHM?
 ; ADD A PLAY COMMAND TO PLAY MIDITONES DOWNLOADED TO RAM?
@@ -1786,6 +1793,7 @@ MAIN1:	RLDI(SP,STACK)\ SEX SP	; reset the stack pointer to the TOS
 	CALL(F_INPUTL)		; read a command line
 	CALL(TCRLF)		; end the line
 	LBDF	MAIN		; branch if the line was terminated by ^C
+	CALL(TCRLF)		; echo a <CRLF> (because INPUTL doesn't!)
 
 ;   Parse the command name, look it up, and execute it.  By convention while
 ; we're parsing the command line (which occupies a good bit of code, as you
@@ -1867,7 +1875,9 @@ COMN3A:	INC	P2		; skip to the dispatch address
 	LBR	COMND1		; and then start over again
 
 ; This command matches!
-COMND4:	SEX SP\ IRX		; restore P3 and P4
+COMND4:	CALL(ISSPAC)		; we have to stop on space or <EOL>
+	LBNF	CMDERR		; no - don't match after all
+	SEX SP\ IRX		; restore P3 and P4
 	POPR(P4)\ POPRL(P3)	; ...
 	RLDI(T1,COMND5)		; switch the PC temporarily
 	SEP	T1		; ...
@@ -3056,10 +3066,21 @@ BASTMO:	OUTSTR(XTOMSG)		; say "?TIMEOUT"
 ; plain ASCII. 
 ;
 ;	>>>HELP
+;
+;   Note that the help text is a plain ASCII string and you could type the
+; whole thing just by calling F_MSG.  The help text has gotten pretty long
+; though, and so we have our own explicit type out loop here just so that we
+; can call F_BRKTEST too.  That allows the printout to be interrupted!
 ;--
 PHELP:	CALL(CHKEOL)		; HELP has no arguments
 	RLDI(P1,HELP)		; nope - just print the whole text
-	LBR	F_MSG		; ... print it and return
+PHELP1:	LDA	P1		; fetch the next byte
+	LBZ	PHELP2		; quit when we find a null
+	CALL(F_TYPE)		; otherwise type it out
+	CALL(F_BRKTEST)		; does the user want to stop now??
+	LBNF	PHELP1		; nope - keep typing
+	CALL(TCRLF)		; make sure we finished the last line
+PHELP2:	RETURN			; all done!
 
 	.SBTTL	SHOW, SET and TEST Commands
 
@@ -3394,7 +3415,7 @@ SHOWEF:	RLDI(P4,IOTBUF)		; build the routine in IOTBUF ...
 	LDI	($E0+PC)	;  ... execute inline I/O
 	STR P4\ INC P4		;  ...
 	LDI	($60+GROUP)	;  ...
-	STR P4\ INC p4
+	STR P4\ INC P4
 
 ; Now get the desired group number from the command line
 	RLDI(P2,BASEGRP)	; default to the base board I/O group
@@ -4278,12 +4299,8 @@ SHOTAP:	CALL(CHKEOL)		; no arguments allowed
 	LBNF	NODRIVE		; no TU58 if there's no serial port
 	CALL(F_TUINIT)		; try to initialize the TU58 drive
 	LBDF	NODRIVE		; ... no TU58 found
-
-;   Regardless of what happened during the POST, we've found a TU58 drive now.
-; Set the H0.TU58 bit in the hardware flags to remember that it's here ...
-	RLDI(DP,HWFLAGS+1)	; point to the hardware flags
-	LDN DP\ ORI H0.TU58	; and set the TU58 detected bit
-	STR	DP		; ...
+;   Note that if TUINIT is successful it will set the H0.TU58 hardware flag
+; for us, so there's no need to worry about that here.
 
 ;   See if unit 0 is ready and print the size if it is ...   Note that when
 ; calling TUSIZE, we want to pass the TU58 UNIT NUMBER in D, HOWEVER when
