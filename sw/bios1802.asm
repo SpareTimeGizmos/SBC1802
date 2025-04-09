@@ -237,8 +237,23 @@
 ;
 ; 069	-- For some printers the BUSY pulse is shorter than the time it took us
 ;	   to detect it!  Rewrite the PRTCHAR code to work with these printers.
+;
+; 070	-- Make F_TESTHWF and TESTHW preserve D in addition to T1.
+;	   TUREAD and TUWRITE need to test the hardware flags for a TU58!
+;	   TUINIT needs to select the I/O group before setting BREAK.
+;	   TUINIT should set the H0.TU58 flag if it is successful.
+;
+; 071	-- Make F_BREAD, F_BTYPE and F_BTEST be unimplemented, rather than
+;	   just calling the UART versions.
+;
+; 072	-- Rewrite CONGET and SL1GET so that they don't call any subroutines.
+;	   THis is necessary to work with the non-standard calling sequence
+;	   David Madole's "xr" program uses.
+;
+; 073	-- Change F_INPUT/F_INPUTL to NOT print a <CRLF> after EOL.  Only
+;	   ^C prints a <CRLF> now.
 ;--
-VEREDT	.EQU	68	; and the edit level
+VEREDT	.EQU	73	; and the edit level
 
 ;TODO
 
@@ -254,8 +269,8 @@ VEREDT	.EQU	68	; and the edit level
 ; $F000	- SBC1802 entry vectors, copyright, context save and restore
 ;	- hardware independent BIOS routines
 ;	- console UART primitives, console I/O routines
-;	- console line input w/editing (F_INPUTL)
-;	... approximately 255 bytes free
+;	- Console line input w/editing (F_INPUTL)
+;	... approximately 239 bytes free
 ;
 ; $F800	- extended BIOS entry vectors
 ;	- CDP1879 real time clock code
@@ -263,7 +278,7 @@ VEREDT	.EQU	68	; and the edit level
 ;	- IDE/ATA disk code
 ;	- TU58 serial tape or disk code
 ;	- disk/tape bootstrap
-;	... approximately 98 bytes free
+;	... approximately 66 bytes free
 ;
 ; $FE00	- RAMPAGE, MCR, CDP1877 PIC, and CDP1879 RTC
 ;
@@ -677,10 +692,17 @@ CONIN:	GHI BAUD\ ANI BD.ALT	; alternate console selected?
 	RETURN			; and return the byte in D
 
 ;   This routine is the same as CONIN, however this one DOES echo the input
-; but only if the echo flag in BAUD.1 is set...
+; but only if the echo flag in BAUD.1 is set.
+;
+;   IMPORTANT!!!  This routine CANNOT call (with a CALL() linkage) any other
+; subroutine?  Why?  Because David's MiniDOS xr cheats on the SCRT calling
+; convention.  If you call another subroutine from here it won't work.
 CONGET:	GHI BAUD\ ANI BD.ALT	; is the alternate console selected?
 	LBNZ	SL1GET		; yes - use that instead
-	CALL(CONIN)		; read a character
+	OUTI(GROUP,BASEGRP)	; select the base board I/O group
+CONGE1:	SEX SP\ INP SL0STS	; read the UART status
+	SHR\ LBNF CONGE1	; test the DA bit and wait for 1
+	INP	SL0BUF		; read the receiver buffer
 	PLO	BAUD		; and save it for a moment
 	GHI	BAUD		; see if echo is required
 	SHR			; put the echo bit into DF
@@ -855,8 +877,12 @@ SL1IN:	CALL(SL1HIT)		; see if a character is ready
 	RETURN			; and return the byte in D
 
 ;   This routine is the same as SL1IN, however this one DOES echo the input,
-; but only if the echo flag in BAUD.1 is set...
-SL1GET:	CALL(SL1IN)		; read a character
+; but only if the echo flag in BAUD.1 is set...   IMPORTANT!  Like CONGET, this
+; subroutine cannot call any nested subroutines.  See CONGET for more.
+SL1GET:	OUTI(GROUP,SL1GRP)	; select the SLU1 I/O group
+	SEX SP\ INP SL1STS	; read the UART status
+	SHR\ LBNF SL1GET	; put the DA bit into DF
+	INP	SL1BUF		; read the receiver buffer
 	PLO	BAUD		; and save it for a moment
 	GHI	BAUD		; see if echo is required
 	SHR			; put the echo bit into DF
@@ -971,10 +997,10 @@ INLMSG:	LDA	A		; get the next character
 ;   BACKSPACE ($08) - erase the last character input
 ;   DELETE    ($7F) - same as BACKSPACE
 ;   CONTROL-U ($15) - erase the entire line and start over
-;   RETURN    ($0D) - echos <CRLF>, terminates input and returns
+;   RETURN    ($0D) - terminates input and returns with DF=0
 ;   LINE FEED ($0A) - same as RETURN
-;   ESCAPE    ($1B) - echos "$" and <CRLF>, then terminates input and returns
-;   CONTROL-C ($03) - aborts all input and returns with DF=1
+;   ESCAPE    ($1B) - echos "$" and returns with DF=0
+;   CONTROL-C ($03) - echos "^C", <CRLF> and returns with DF=1
 ;
 ;   The BACKSPACE, DELETE and CONTROL-U functions all work by echoing the
 ; <backspace> <space> <backspace> sequence and assume that you're using a CRT
@@ -1058,6 +1084,7 @@ INPCTU:	CALL(DELCHR)		; try to delete the last character
 ; Here for a CONTROL-C - echo ^C and then terminate input ...
 INPCTC:	GLO	BAUD		; get the CONTROL-C back
 	CALL(TFCHAR)		; echo ^C
+	CALL(TCRLF)		; and <CRLF>
 	SDF			; return DF=1
 	LBR	INPUT3		; and fall into the rest of the EOL code
 
@@ -1068,9 +1095,7 @@ INPESC:	LDI	'$'		; echo a '$'
 
 ; Here for RETURN or LINE FEED ...
 INPEOL:	CDF			; return DF=0
-INPUT3:	CALL(TCRLF)		; echo <CRLF> regardless 
-	LDI	0		; then terminate the input string
-	STR	P1		; ...
+INPUT3:	LDI 0\ STR P1		; then terminate the input string
 	IRX\ POPRL(T1)		; restore T1
 	RETURN			; and we're finally done!
 
@@ -1110,8 +1135,12 @@ DELCH2:	RETURN			; ...
 ;	CALL(TESTHW)
 ;	 .BYTE	<H1 flags>,<H0 flags>
 ;	<DF=0 if all option(s) installed, DF=1 if not>
+;
+;   NOTE that this function is unusual in that it also preserves D (in addition
+; to all other registers).  That's necessary for some of the I/O routines that
+; call it!
 ;--
-TESTHW:	PUSHR(T1)		; save a temporary register
+TESTHW:	STXD\ PUSHR(T1)		; save D and T1
 	RLDI(T1,HWFLAGS)	; and point to the hardware flags
 	LDA A\ STR SP		; put the first mask byte on the stack
 	LDA T1\ AND\ XOR	; and test the masked bits
@@ -1122,7 +1151,8 @@ TESTHW:	PUSHR(T1)		; save a temporary register
 	CDF\ LBR TESTH3		; success!!
 TESTH1:	INC	A		; skip the second argument byte
 TESTH2:	SDF			; and return failure
-TESTH3:	IRX\ POPRL(T1)\ RETURN	; restore T1 and we're done
+TESTH3:	IRX\ POPR(T1)\ LDX	; restore T1 and D
+	 RETURN			; and we're done
 
 	.SBTTL	Binary to BCD and BCD to Binary Conversions
 
@@ -1177,10 +1207,10 @@ BIN2B2:	ADI	10		; restore the remainder
 ; don't do bit banged serial at all, so we don't bother with the distinction
 ; here and all are the same ...
 ;--
-	BENTRY(F_BREAD,   CONGET)	; ...
-	BENTRY(F_BTYPE,   CONOUT)	; ...
-	BENTRY(F_BTEST,   CONHIT)	; ...
-	BENTRY(F_UTYPE,   CONOUT)	; ...
+	BUNIMP(F_BREAD)			; no bit banged serial support here!
+	BUNIMP(F_BTYPE)			; ...
+	BUNIMP(F_BTEST)			; ...
+	BENTRY(F_UTYPE,   CONOUT)	; these functions all access the UART
 	BENTRY(F_UREAD,   CONGET)	; ...
 	BENTRY(F_UTEST,   CONHIT)	; ...
 	BENTRY(F_USETBD,  CONSET)	; set console baud rate and format
@@ -1744,6 +1774,9 @@ TUREAD:	PLO	BAUD		; save the unit number for a moment
 	GLO T2\ LBNZ TURD52	; ...
 	RLDI(P2,DSKBSZ)		; alway transfers 512 bytes
 	GLO	BAUD		; restore the unit number
+	CALL(F_TESTHWF)		; make sure the TU58 exists
+	 .BYTE	 0, H0.TU58	; ...
+	LBDF	TURD53		; return "no tape" if not
 	CALL(TUXCMD)		; transmit a control/command packet
 	 .BYTE	 TUCRDD		;  ... read data from tape
 	
@@ -1781,6 +1814,7 @@ TURD40:	CALL(TUREND)		; try to read an END packet
 	LBR	TURD51		; and fall into TURD51
 
 ; Here for any error - return DF=1
+TURD53:	LDI LOW(TUENOT)\ LSKP	; return "no tape"
 TURD52:	LDI	LOW(TUEBLK)	; return "invalid block number"
 TURD50:	SDF			; checksum bad (or some other) error
 TURD51:	PLO BAUD\ IRX		; save the error code for later
@@ -1813,6 +1847,9 @@ TUWRITE:PLO	BAUD		; save the unit number for a moment
 	GLO T2\ LBNZ TURD52	; ...
 	RLDI(P2,DSKBSZ)		; write always transfers 512 bytes
 	GLO	BAUD		; restore the unit
+	CALL(F_TESTHWF)		; make sure the TU58 exists
+	 .BYTE	 0, H0.TU58	; ...
+	LBDF	TURD53		; return "no tape" if not
 	CALL(TUXCMD)		; transmit a control/command packet
 	 .BYTE	 TUCWRT		;  ... write data to tape
 
@@ -1961,14 +1998,14 @@ TUREN2:	SDF \ LDI $FF		; return DF=1 and error code FF
 TUINIT:	PUSHR(T2)		; save T2 (used by TUGET!)
 	CALL(F_TESTHWF)		; see if SLU1 is even present?
 	 .BYTE	 H0.SLU1, 0	; ...
-	LBDF	TUINI5		; no - just quit now
+	LBDF	TUINI7		; no - just quit now
 	GHI BAUD\ ANI BD.ALT	; is the alternate console in use?
-	LBNZ	TUINI5		; yes - that uses SLU1 so no TU58!
-	OUTI(GROUP,SL1GRP)	; be sure the SLU1 I/O group is selected
+	LBNZ	TUINI7		; yes - that uses SLU1 so no TU58!
 	LDI  8\ PHI P1		; retry 8 times before giving up
 
 ; Send a BREAK to the TU58 ...
-TUINI1:	RLDI(T2,SL1FMT)		; saved character format for SLU1
+TUINI1:	OUTI(GROUP,SL1GRP)	; be sure the SLU1 I/O group is selected
+	RLDI(T2,SL1FMT)		; saved character format for SLU1
 	LDN T2\ ORI SL.BRK	; set the force break bit
 	STR SP\ SEX SP		; ...
 	OUT SL1CTL\ DEC SP	; write the SLU1 control register
@@ -2001,12 +2038,15 @@ TUINI4:	GHI	P1		; no - get the retry counter
 	SMI	1		; and decrement it
 	PHI	P1		; ...
 	LBNZ	TUINI1		; retry 8 times
-				; failure - fall into the error return
+TUINI7:	SDF\ LBR TUINI5		; failure - take the error return
 
-; One way or another we're done ...
-TUINI5:	SDF\ LSKP		; return DF=1 for failure
-TUINI6:	CDF			; return DF=0 for success
-	OUTI(GROUP,BASEGRP)	; restore the base I/O group
+;   Success!!  Regardless of what happened during the POST, we've found a TU58
+; drive now. Set the H0.TU58 bit in the hardware flags to remember that it's
+; here ...
+TUINI6:	RLDI(T1,HWFLAGS+1)	; point to the hardware flags
+	LDN T1\ ORI H0.TU58	; and set the TU58 detected bit
+	STR T1\ CDF		; return DF=0 for success
+TUINI5:	OUTI(GROUP,BASEGRP)	; restore the base I/O group
 	SEX SP\ IRX\ POPRL(T2)	; restore T2
 	RETURN			; and we're done for now
 
