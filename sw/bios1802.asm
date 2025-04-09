@@ -1483,12 +1483,15 @@ DISKWR:	GHI	T2		; select the correct drive
 	CALL(WDRQ)		; wait for the drive to ask for data
 	LBDF	DSKRET		; give up if error
 	PUSHR(P3)		; save a temporary register
-	RLDI(P3,DSKBSZ)		; transfer 512 bytes of data
+	RLDI(P3,DSKBSZ/4)		; transfer 512 bytes of data
 	OUTI(IDESEL,IDEDATA)	; select the drive data register
-	SEX	SP		; be sure the stack is addressed
-DISKW1:	LDA P1\ STR SP		; get buffer byte and put it on the TOS
-	OUT IDEBUF\ DEC SP	; and send it to the drive
+	SEX	P1		; be sure the stack is addressed
+DISKW1:	OUT	IDEBUF		; send buffer byte to the drive
+	OUT	IDEBUF
+	OUT	IDEBUF
+	OUT	IDEBUF
 	DBNZ(P3,DISKW1)		; loop until we've done 512 bytes
+	SEX	SP		; put x back to stack pointer
 	IRX\ POPRL(P3)		; restore P3
 	LBR	WREADY		; wait for the drive to write the sector
 
@@ -1516,10 +1519,13 @@ DISKRD:	GHI	T2		; select the correct drive
 	CALL(WDRQ)		; wait for the drive to ask for data
 	LBDF	DSKRET		; give up if error
 	PUSHR(P3)		; save a temporary register
-	RLDI(P3,DSKBSZ)		; transfer 512 bytes of data
+	RLDI(P3,DSKBSZ/4)	; transfer 512 bytes of data
 	OUTI(IDESEL,IDEDATA)	; select the drive data register
 	SEX	P1		; address the caller's buffer
 DISKR1:	INP IDEBUF\ INC P1	; read from the drive and put it in the buffer
+	INP IDEBUF\ INC P1
+	INP IDEBUF\ INC P1
+	INP IDEBUF\ INC P1
 	DBNZ(P3,DISKR1)		; loop for all 512 bytes
 	SEX SP\ IRX\ POPRL(P3)	; restore P3
 	LBR	WREADY		; wait for ready or just return???
