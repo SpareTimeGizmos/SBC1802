@@ -350,11 +350,13 @@
 ;	   a space or EOL after a match!
 ;
 ; 089	-- All the HELP command output to be interrupted.
+;
+; 090	-- Edit 88 broke the ";" and ":" commands!  Fix that ...
 ;--
-VEREDT	.EQU	89	; and the edit level
+VEREDT	.EQU	90	; and the edit level
 
 ; TODO LIST
-; **** APPROXIMATELY 44 FREE BYTES ARE LEFT IN THIS FIRMWARE!!!! ****
+; **** APPROXIMATELY 25 FREE BYTES ARE LEFT IN THIS FIRMWARE!!!! ****
 ;
 ; ADD "SET RESTART BASIC" TO BOOT INTO BASIC!
 ; MODIFY MICRODOS CONSOLE I/O TO RESPECT FLOW CONTROL AND ALTERNATE CONSOLE??
@@ -1801,7 +1803,17 @@ MAIN1:	RLDI(SP,STACK)\ SEX SP	; reset the stack pointer to the TOS
 	RLDI(P1,CMDBUF)		; P1 always points to the command line
 	CALL(ISEOL)		; is the line blank???
 	LBDF	MAIN		; yes - just go read another
-	RLDI(P2,CMDTBL)		; table of top level commands
+
+;   First check for the ";" (comment line) and ":" (Intel .HEX line) commands.
+; These are both special cases!
+	CALL(F_LTRIM)\ LDN P1	; get the first non-space character
+	SMI $3B\ LBZ MAIN	; if it's ";" then just ignore the line
+	ADI $3B-':'\ LBNZ MAIN2	; is it a ":" ??
+	INC P1\ CALL(IHEX)	; yes - read a .HEX file line
+	LBR	MAIN		; and then parse another line
+
+; Here to parse all other commands ...
+MAIN2:	RLDI(P2,CMDTBL)		; point to table of top level commands
 	CALL(COMND)		; parse and execute the command
 	LBR	MAIN		; and the do it all over again
 
@@ -1875,7 +1887,8 @@ COMN3A:	INC	P2		; skip to the dispatch address
 	LBR	COMND1		; and then start over again
 
 ; This command matches!
-COMND4:	CALL(ISSPAC)		; we have to stop on space or <EOL>
+COMND4:	
+	CALL(ISSPAC)		; we have to stop on space or <EOL>
 	LBNF	CMDERR		; no - don't match after all
 	SEX SP\ IRX		; restore P3 and P4
 	POPR(P4)\ POPRL(P3)	; ...
@@ -1929,8 +1942,6 @@ CMDTBL:	CMD(2, "DUMP",       DDUMP)	; dump disk blocks
 	CMD(1, "BOOT",       BOOCMD)	; boot from the primary IDE disk
 	CMD(1, "EXAMINE",    EXAM)	; examine/dump memory bytes
 	CMD(1, "DEPOSIT",    DEPOSIT)	; deposit data in memory
-	CMD(1, ":",          IHEX)	; load Intel .HEX format files
-	CMD(1, ";",	     MAIN)	; a comment
 ; The table always ends with a zero byte...
 	.BYTE	0
 
