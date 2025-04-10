@@ -1778,7 +1778,8 @@ BTRMSG:	.TEXT	"\r\nUNIMPLEMENTED BIOS CALL \000"
 	.SBTTL	Command Scanner
 
 ;  Initialize (or rather, re-initialize) enough context so that things can
-; still run even if some registers have been screwed up...
+; still run even if some registers have been screwed up.
+CTLC:	INLMES("^C\r\n")	; here when ^C is typed
 MAIN:	OUTI(LEDS,POST0)	; be sure the LEDs show 0
 MAIN1:	RLDI(SP,STACK)\ SEX SP	; reset the stack pointer to the TOS
 	RLDI(R1,F_TRAP)		; set up the breakpoint handler
@@ -1791,7 +1792,7 @@ MAIN1:	RLDI(SP,STACK)\ SEX SP	; reset the stack pointer to the TOS
 	RLDI(P1,CMDBUF)		; address of the command line buffer
 	RLDI(P3,CMDMAX)		; and the length of the same
 	CALL(F_INPUTL)		; read a command line
-	LBDF	MAIN		; branch if the line was terminated by ^C
+	LBDF	CTLC		; branch if the line was terminated by ^C
 	CALL(TCRLF)		; echo a <CRLF> (because INPUTL doesn't!)
 
 ;   Parse the command name, look it up, and execute it.  By convention while

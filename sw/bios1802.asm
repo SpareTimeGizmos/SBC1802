@@ -250,10 +250,14 @@
 ;	   THis is necessary to work with the non-standard calling sequence
 ;	   David Madole's "xr" program uses.
 ;
-; 073	-- Change F_INPUT/F_INPUTL to NOT print a <CRLF> after EOL.  Only
-;	   ^C prints a <CRLF> now.
+; 073	-- Change F_INPUT/F_INPUTL to NOT print a <CRLF> after <CR>, <LF>,
+;	   or ^C.  <ESC> still prints "$" but nothing more.
+;
+; 074	-- Partially unroll the transfer loop for DISKRD and DISKWR.  This
+;	   speeds up the transfers by about 50%.  Thanks David Madole for
+;	   suggesting it.
 ;--
-VEREDT	.EQU	73	; and the edit level
+VEREDT	.EQU	74	; and the edit level
 
 ;TODO
 
@@ -997,10 +1001,10 @@ INLMSG:	LDA	A		; get the next character
 ;   BACKSPACE ($08) - erase the last character input
 ;   DELETE    ($7F) - same as BACKSPACE
 ;   CONTROL-U ($15) - erase the entire line and start over
-;   RETURN    ($0D) - terminates input and returns with DF=0
+;   RETURN    ($0D) - echos nothing, terminates input and returns with DF=0
 ;   LINE FEED ($0A) - same as RETURN
-;   ESCAPE    ($1B) - echos "$" and returns with DF=0
-;   CONTROL-C ($03) - echos "^C", <CRLF> and returns with DF=1
+;   ESCAPE    ($1B) - echos "$", terminates input and returns with DF=0
+;   CONTROL-C ($03) - echos nothing and returns with DF=1
 ;
 ;   The BACKSPACE, DELETE and CONTROL-U functions all work by echoing the
 ; <backspace> <space> <backspace> sequence and assume that you're using a CRT
@@ -1082,10 +1086,7 @@ INPCTU:	CALL(DELCHR)		; try to delete the last character
 	LBR	INPUT1		; then start over again
 
 ; Here for a CONTROL-C - echo ^C and then terminate input ...
-INPCTC:	GLO	BAUD		; get the CONTROL-C back
-	CALL(TFCHAR)		; echo ^C
-	CALL(TCRLF)		; and <CRLF>
-	SDF			; return DF=1
+INPCTC:	SDF			; return DF=1
 	LBR	INPUT3		; and fall into the rest of the EOL code
 
 ; Here for ESCAPE - echo "$" and terminate the input ...
@@ -1505,6 +1506,10 @@ PRTSTAT:OUTI(GROUP,PPIGRP)	; select the PPI I/O group
 ;
 ;   As with all the IDE functions, if the operation fails for any reason it will
 ; return DF=1 and the drive error register in D.
+;
+;   Note that the loop to output data to the disk drive has been partially
+; "unrolled" to output four bytes per iteration rather than one.  This gives
+; around a 50% performance improvement.  Thanks David Madole for suggesting it.
 ;--
 DISKWR:	GHI	T2		; select the correct drive
 	CALL(DRVSEL)		; and wait for it to be ready
@@ -1514,13 +1519,14 @@ DISKWR:	GHI	T2		; select the correct drive
 	CALL(WDRQ)		; wait for the drive to ask for data
 	LBDF	DSKRET		; give up if error
 	PUSHR(P3)		; save a temporary register
-	RLDI(P3,DSKBSZ)		; transfer 512 bytes of data
+	LDI DSKBSZ/4\ PLO P3	; transfer 512 bytes of data 4 bytes at a time
 	OUTI(IDESEL,IDEDATA)	; select the drive data register
-	SEX	SP		; be sure the stack is addressed
-DISKW1:	LDA P1\ STR SP		; get buffer byte and put it on the TOS
-	OUT IDEBUF\ DEC SP	; and send it to the drive
-	DBNZ(P3,DISKW1)		; loop until we've done 512 bytes
-	IRX\ POPRL(P3)		; restore P3
+	SEX	P1		; address the caller's buffer
+DISKW1:	OUT IDEBUF\ OUT IDEBUF	; output four bytes
+	OUT IDEBUF\ OUT IDEBUF	; ...
+	DEC P3\ GLO P3		; loop 128 times for 512 bytes
+	LBNZ	DISKW1		; ...
+	SEX SP\ IRX\ POPRL(P3)	; restore P3
 	LBR	WREADY		; wait for the drive to write the sector
 
 
@@ -1538,6 +1544,9 @@ DISKW1:	LDA P1\ STR SP		; get buffer byte and put it on the TOS
 ;
 ;   As with all the IDE functions, if the operation fails for any reason it will
 ; return DF=1 and the drive error register in D.
+;
+;   And as with DISKWR, data is transferred four bytes at a time to "unroll"
+; the inner loop.  This speeds up the transfer by about 50% ...
 ;--
 DISKRD:	GHI	T2		; select the correct drive
 	CALL(DRVSEL)		; and wait for it to be ready
@@ -1547,11 +1556,15 @@ DISKRD:	GHI	T2		; select the correct drive
 	CALL(WDRQ)		; wait for the drive to ask for data
 	LBDF	DSKRET		; give up if error
 	PUSHR(P3)		; save a temporary register
-	RLDI(P3,DSKBSZ)		; transfer 512 bytes of data
+	LDI DSKBSZ/4\ PLO P3	; transfer 512 bytes of data 4 bytes at a time
 	OUTI(IDESEL,IDEDATA)	; select the drive data register
 	SEX	P1		; address the caller's buffer
 DISKR1:	INP IDEBUF\ INC P1	; read from the drive and put it in the buffer
-	DBNZ(P3,DISKR1)		; loop for all 512 bytes
+	INP IDEBUF\ INC P1	; do that four times!
+	INP IDEBUF\ INC P1	; ...
+	INP IDEBUF\ INC P1	; ...
+	DEC P3\ GLO P3		; loop 128 times for all 512 bytes
+	LBNZ	DISKR1		; ...
 	SEX SP\ IRX\ POPRL(P3)	; restore P3
 	LBR	WREADY		; wait for ready or just return???
 
