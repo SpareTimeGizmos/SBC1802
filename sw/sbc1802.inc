@@ -129,6 +129,7 @@ CH.CTO	.EQU	$0F	; control-O (suppress output)
 CH.XON	.EQU	$11	; control-Q (resume output)
 CH.CTR	.EQU	$12	; control-R (retype input)
 CH.XOF	.EQU	$13	; control-S (pause output
+CH.DC3  .EQU	CH.XOF	; also used by MicroDOS as EOF!
 CH.CTU	.EQU	$15	; control-U (erase input)
 CH.ESC	.EQU	$1B	; control-[ (escape)
 CH.DEL	.EQU	$7F	; rubout (delete)
@@ -384,7 +385,7 @@ SLUBRG	 .EQU	7	; SLU0/SLU1 baud rate generator
 ;       |       |    |       |    |       |    |       |    |       |
 ;       | RAM 1 |    |       |    | EPROM |    | EPROM |    | EPROM |
 ;       |       |    | RAM 1 |    |       |    |       |    |       |
-; 8400  +-------+    |       |    |       |    |       |    |       |
+; 8800  +-------+    |       |    |       |    |       |    |       |
 ;       | EPROM |    |       |    |       |    |       |    |       |
 ; 8000  +-------+    +-------+    +-------+    +-------+    +-------+
 ;       |       |    |       |    |       |    |       |    |       |
@@ -413,7 +414,7 @@ MC.MDOS	 .EQU	%110	; MicroDOS compatible memory map
 MC.ELOS	 .EQU	%111	; ElfOS compatible memory map
 MC.MASK	 .EQU	%111	; mask for all mapping bits
 
-;   The MCR contains a fourth writable bit which service as a master interrupt
+;   The MCR contains a fourth writable bit which serves as a master interrupt
 ; enable.  This is unfortunately necessary because the CDP1877 PIC doesn't have
 ; a clear/reset input and could be in any state after the SBC1802 is reset,
 ; including with an active interrupt request.  Since the 1802 CPU also resets to
@@ -795,6 +796,7 @@ H0.PPI	 .EQU	BIT6	; CDP1851 programmable parallel interface present
 H0.TU58	 .EQU	BIT5	; serial TU58 drive detected
 H0.PSG	 .EQU	BIT4	; AY-3-8912 programmable sound generator prsent
 H0.CTC	 .EQU	BIT3	; CDP1878 programmable timer/counter present
+H0.LPT	 .EQU	BIT2	; set by F_PRTINIT when a printer is detected
 
 	.EJECT
 ;	SBTTL	SBC1802 Expansion Board Definitions 
@@ -1034,6 +1036,7 @@ PSGVOL	.EQU	7	; default volume (0..15)
 ; running the bootstrap at address EO.BTSA with P=R0.
 EO.BBUF	.EQU	$0100	; RAM area for loading bootstrap
 EO.BTSA	.EQU	$0106	; bootstrap starting address
+EO.FSTY	.EQU	$0204	; file system type (LAT-16 or LAT-32)
 EO.BCBC	.EQU	$41	; ElfOS boot check byte count
 EO.BCCK	.EQU	$60	; ElfOS boot check checksum
 
@@ -1091,6 +1094,7 @@ UDNAME   .EQU	$A843	; 'MICRODOS' name in kernel
 ; contains DPBASE in its upper byte.  This allows the DP register to be used
 ; for direct addressing of any data on this page simply by reloading the lower
 ; byte rather than the entire register...
+#ifdef	SBC1802
 	.ORG	DPBASE
 
 ;   This "key" is used to determine whether the SRAM contents are valid or junk.
@@ -1187,4 +1191,5 @@ STKSIZ	.EQU	STACK-$	; and the space allocated for that stack
 #endif
 
 	.ORG	$0000
+#endif
 	.EJECT

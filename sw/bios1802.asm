@@ -256,8 +256,26 @@
 ; 074	-- Partially unroll the transfer loop for DISKRD and DISKWR.  This
 ;	   speeds up the transfers by about 50%.  Thanks David Madole for
 ;	   suggesting it.
+;
+; 075	-- Pass the boot unit number in T2.1 (R8.1) for MiniDOS.
+;
+; 076	-- Add the F_DEV2NUM and F_NUM2DEV routines to translate SBC1802 device
+; 	   names (e.g. "ID1") to the device number (e.g. 1) and back again.
+;	   Steal the vectors for F_RDSEC and F_WRTSEC for these new calls.
+;
+; 077	-- Add F_BTCHK4 nd F_BTCHK5 routines.  Make F_SDBOOT and F_IDEBOOT
+;	   fail if the specified drive does not contain an ElfOS bootstrap.
+;
+; 078	-- PRTINIT and PRTCHAR need to restore the base I/O group before exit.
+;	   Otherwise it screws up MicroDOS!
+;
+; 079	-- Make PRTINIT check more conditions before it declares a printer to
+;	   be present.  Shorten the PRTCHAR timeout to about 2.6 seconds.
+;
+; 080	-- Now that the code is fairly stable, change a bunch of long branches
+;	   to short branches.  This saves about 60 bytes.
 ;--
-VEREDT	.EQU	74	; and the edit level
+VEREDT	.EQU	80	; and the edit level
 
 ;TODO
 
@@ -274,7 +292,7 @@ VEREDT	.EQU	74	; and the edit level
 ;	- hardware independent BIOS routines
 ;	- console UART primitives, console I/O routines
 ;	- Console line input w/editing (F_INPUTL)
-;	... approximately 239 bytes free
+;	... approximately 126 bytes free
 ;
 ; $F800	- extended BIOS entry vectors
 ;	- CDP1879 real time clock code
@@ -282,13 +300,13 @@ VEREDT	.EQU	74	; and the edit level
 ;	- IDE/ATA disk code
 ;	- TU58 serial tape or disk code
 ;	- disk/tape bootstrap
-;	... approximately 66 bytes free
+;	... approximately 52 bytes free
 ;
 ; $FE00	- RAMPAGE, MCR, CDP1877 PIC, and CDP1879 RTC
 ;
 ; $FF00	- primary BIOS entry vectors
 ; 	- SCRT routines, F_FREEMEM and F_GETDEV
-;	... approximately 35 bytes free
+;	... approximately 23 bytes free
 ; $FFE0	- LBR to the SCRT "CALL" routine
 ; $FFF1	- LBR to the SCRT "RETURN" routine
 ; $FFF7	- pointer to BIOS copyright notice (2 bytes)
@@ -357,6 +375,9 @@ VEREDT	.EQU	74	; and the edit level
 	BENTRY(F_PRTCHAR,   PRTCHAR)	; print one ASCII character
 	BENTRY(F_PRTTEXT,   PRTTEXT)	; print null terminated string
 	BENTRY(F_PRTSTAT,   PRTSTAT)	; return printer status bits
+; Test for valid ElfOS v4 and v5 boot sectors ...
+	BENTRY(F_BTCHK4,    BTCHK4)	; test for ElfOS v4 boot sector
+	BENTRY(F_BTCHK5,    BTCHK5)	; test for ElfOS v5 boot sector
 
 ;   The copyright notice always follows the last SBC1802 vector.  There's also a
 ; BIOS version number, but that's located at the end of this file (right before
@@ -398,16 +419,15 @@ RIGHTS:	.TEXT	"Copyright (C) 2021-2025 by Spare Time Gizmos.\r\n"
 ;
 ;   Saving X and P is pretty much a waste since we know P=3 and X is most likely
 ; 2, but the TRAP code expects this to be on the stack.  Also, notice that the
-; PC which gets saved will be the R3 value right before the "SEP R1", and it's
+; PC which gets saved will be the R3 value right after the "SEP R1", and it's
 ; worth thinking about what would happen if the user tells us to CONTINUE in
-; that case.  That's why there's an LBR back to MINIMON after the SEP R1...
+; that case.  That's why there's an BR back to MINIMON after the SEP R1...
 ;--
 MINIMON:STR	SP		; save D temporarily
 	RLDI(R1,TRAP)		; make sure R1 is valid
 	LDN	SP		; restore D
-	MARK			; push (X,P) on the stack
-	SEP	R1		; branch to TRAP to save all the registers
-	LBR	MINIMON		; in case of CONTINUE!
+	BPT			; SBC1802 breakpoint trap
+	BR	MINIMON		; in case of CONTINUE!
 
 
 ;   The CONTINUE routine (see the next page) will branch to TRAPX as the final
@@ -665,11 +685,11 @@ CONOUT:	PUSHD			; save the byte to print
 	OUTI(GROUP,BASEGRP)	; make sure the base board I/O group is selected
 CONOU1:	SEX SP\ INP SL0STS	; read the UART status register
 	ANI	SL.THRE		; is the transmitter busy?
-	LBZ	CONOU1		; wait if it is
+	BZ	CONOU1		; wait if it is
 	GHI BAUD\ ANI BD.RTS	; is flow control enabled?
-	LBNZ	CONOU2		; no - just output now
+	BNZ	CONOU2		; no - just output now
 	LDN SP\ ANI SL.ES	; yes - check for CTS too
-	LBZ	CONOU1		; wait if CTS is clear
+	BZ	CONOU1		; wait if CTS is clear
 CONOU2:	IRX\ OUT SL0BUF		; type the saved character
 	DEC SP\ LDN SP		; restore the original character
 	RETURN			; and we're done
@@ -691,7 +711,7 @@ CONHIT:	GHI BAUD\ ANI BD.ALT	; alternate console selected?
 CONIN:	GHI BAUD\ ANI BD.ALT	; alternate console selected?
 	LBNZ	SL1IN		; yes - use SLU1 instead
 	CALL(CONHIT)		; see if a character is ready
-	LBNF	CONIN		; and wait until one is
+	BNF	CONIN		; and wait until one is
 	INP	SL0BUF		; read the receiver buffer
 	RETURN			; and return the byte in D
 
@@ -787,11 +807,11 @@ BDTAB1:	.BYTE	BD.300,  BD.1200, BD.2400, BD.4800
 AUTOBAUD:LDI 4\ CALL(CONSET)	; set the UART for 9600 baud
 	CALL(AUTOBD)		; try to recognize a <CR>
 	 .WORD	ABDTB1		;  ... autobaud table for 9600 baud
-	LBNZ	AUTOB9		; branch if we were successful
+	BNZ	AUTOB9		; branch if we were successful
 	LDI 1\ CALL(CONSET)	; no match - try at 1200 baud
 	CALL(AUTOBD)		; try again to find a <CR>
 	 .WORD	ABDTB2		;  ... autobaud table for 1200 baud
-	LBZ	AUTOBAUD	; loop forever until we find a match
+	BZ	AUTOBAUD	; loop forever until we find a match
 
 ; Here if we successfully find a match!
 AUTOB9:	RLDI(BAUD,$0100)	; ALWAYS set the echo flag
@@ -818,15 +838,15 @@ ABDTB2:	.BYTE	$0D, 1		; 1,200bps
 ; correct baud rate according to the table and returns with DF=1.  If it doesn't
 ; find a match then it returns DF=0.
 AUTOBD:	INP SL0STS\ SHR		; read the DA bit from the UART status register
-	LBNF	AUTOBD		; wait for DA to be set
+	BNF	AUTOBD		; wait for DA to be set
 	INP	SL0BUF		; get the character and put it on the stack
 	SEX A\ POPR(P1)		; point at the baud rate table
 AUTOB2:	LDA	P1		; get a byte from the baud table
-	LBZ	AUTOB4		; branch if end of table
+	BZ	AUTOB4		; branch if end of table
 	SEX SP\ XOR		; compare it to the byte on the stack
-	LBZ	AUTOB3		; branch if we found a match
+	BZ	AUTOB3		; branch if we found a match
 	INC	P1		; no match - skip the baud byte
-	LBR	AUTOB2		; and keep looking
+	BR	AUTOB2		; and keep looking
 
 ; Here if we found a match - get the baud rate and set it ...
 AUTOB3:	LDN P1\ CALL(CONSET)	; set the correct baud rate
@@ -857,7 +877,7 @@ AUTOB4:	LDI 0\ PUSHD		; save the return code on the stack
 SL1OUT:	PUSHD			; save the byte to print
 SL1OU0:	OUTI(GROUP,SL1GRP)	; be sure the SLU1 I/O group is selected
 SL1OU1:	SEX SP\ INP SL1STS	; read the UART status register
-	ANI SL.THRE\ LBZ SL1OU1	; wait for THRE to set
+	ANI SL.THRE\ BZ SL1OU1	; wait for THRE to set
 	IRX\ OUT SL1BUF		; output the character we saved
 	DEC SP\ LDN SP		; restore the original character
 	OUTI(GROUP,BASEGRP)	; just to be safe
@@ -876,7 +896,7 @@ SL1HIT:	OUTI(GROUP,SL1GRP)	; select the SLU1 I/O group
 ;   Read one character from the auxiliary UART and return it in D, waiting for
 ; one to become available if necessary.  The character read is NEVER echoed.
 SL1IN:	CALL(SL1HIT)		; see if a character is ready
-	LBNF	SL1IN		; and wait until one is
+	BNF	SL1IN		; and wait until one is
 	INP	SL1BUF		; read the receiver buffer
 	RETURN			; and return the byte in D
 
@@ -885,7 +905,7 @@ SL1IN:	CALL(SL1HIT)		; see if a character is ready
 ; subroutine cannot call any nested subroutines.  See CONGET for more.
 SL1GET:	OUTI(GROUP,SL1GRP)	; select the SLU1 I/O group
 	SEX SP\ INP SL1STS	; read the UART status
-	SHR\ LBNF SL1GET	; put the DA bit into DF
+	SHR\ BNF SL1GET		; put the DA bit into DF
 	INP	SL1BUF		; read the receiver buffer
 	PLO	BAUD		; and save it for a moment
 	GHI	BAUD		; see if echo is required
@@ -919,11 +939,11 @@ SL1GET:	OUTI(GROUP,SL1GRP)	; select the SLU1 I/O group
 NBREAD:	GHI BAUD\ ANI BD.ALT	; alternate console selected?
 	LBNZ	SL1NBR		; yes - use SLU1
 NBREA1:	CALL(CONHIT)		; see if a character is waiting
-	LBDF	NBREA3		; branch if there's something there
-	GLO P3\ LBNZ NBREA2	; has the timeout expired?
-	GHI P3\ LBZ NBREA9	; yes - return DF=0 and quit now
+	BDF	NBREA3		; branch if there's something there
+	GLO P3\ BNZ NBREA2	; has the timeout expired?
+	GHI P3\ BZ NBREA9	; yes - return DF=0 and quit now
 NBREA2:	DLY1MS			; wait for 1ms
-	DEC P3\ LBR NBREA1	; decrement the timeout and try again
+	DEC P3\ BR NBREA1	; decrement the timeout and try again
 NBREA3:	CALL(CONGET)		; character waiting - read it and echo
 	SDF			; make sure DF=1
 NBREA9:	RETURN			; and we're done	
@@ -931,11 +951,11 @@ NBREA9:	RETURN			; and we're done
 
 ; This function is identical to NBREAD, but for SLU1 ...
 SL1NBR:	CALL(SL1HIT)		; see if a character is waiting
-	LBDF	SL1NB3		; branch if there's something there
-	GLO P3\ LBNZ SL1NB2	; has the timeout expired?
-	GHI P3\ LBZ NBREA9	; yes - return DF=0 and quit now
+	BDF	SL1NB3		; branch if there's something there
+	GLO P3\ BNZ SL1NB2	; has the timeout expired?
+	GHI P3\ BZ NBREA9	; yes - return DF=0 and quit now
 SL1NB2:	DLY1MS			; delay for 1 millisecond
-	DEC P3\ LBR SL1NBR	; decrement the timeout and keep trying
+	DEC P3\ BR SL1NBR	; decrement the timeout and keep trying
 SL1NB3:	CALL(SL1GET)		; actually read the character and echo
 	SDF\ RETURN		; return DF=1 and we're done
 
@@ -955,7 +975,7 @@ TCRLF:	LDI	CH.CRT		; CARRIAGE RETURN
 ; where "x" is the printing equivalent.  All other characters print normally.
 ; the exception of ESCAPE ($1B) which prints as "$".
 TFCHAR:	SMI	' '		; is it any control character ?
-	LBDF	TFCHA1		; no - just print it
+	BGE	TFCHA1		; no - just print it
 	PUSHD			; yes - save the character for a moment
 	LDI	'^'		; and print a "^" first
 	CALL(CONOUT)		; ...
@@ -978,7 +998,7 @@ TBACKSP:LDI	CH.BSP		; type <backspace>
 ; the string, and we return when we find a zero byte.  Notice that, on return,
 ; P1 points to the next byte AFTER the end of string.  That's critical!
 TTEXT:	LDA	P1		; get the next character to type
-	LBZ	TTEXT1		; branch if we're done
+	BZ	TTEXT1		; branch if we're done
 	CALL(CONOUT)		; nope - type this on the console
 	LBR	TTEXT		; and keep typing
 TTEXT1:	RETURN			; here when we find a null
@@ -987,9 +1007,9 @@ TTEXT1:	RETURN			; here when we find a null
 ;   Type an ASCIZ string "in line" after the CALL.  This is basically the same
 ; as TTEXT, but this time A points to the string instead of P1 ...
 INLMSG:	LDA	A		; get the next character
-	LBZ	TTEXT1		; return when we find a null
+	BZ	TTEXT1		; return when we find a null
 	CALL(CONOUT)		; bot yet - print this one
-	LBR	INLMSG		; and keep going
+	BR	INLMSG		; and keep going
 
 	.SBTTL	Console Line Input w/Editing
 
@@ -1039,55 +1059,55 @@ INPUTL:	PUSHR(T1)		; save a work register
 ; Read the next character and figure out what it is ...
 INPUT1:	CALL(CONIN)		; read WITHOUT echo
 	ANI	$7F		; always trim this input to 7 bits
-	LBZ	INPUT1		; ignore nulls
+	BZ	INPUT1		; ignore nulls
 	PLO	BAUD		; and save the character temporarily
 	SMI	CH.CTC		; CONTROL-C?
-	LBZ	INPCTC		; ...
+	BZ	INPCTC		; ...
 	SMI	CH.BSP-CH.CTC	; BACKSPACE?
-	LBZ	INPBSP		; ...
+	BZ	INPBSP		; ...
 	SMI	CH.LFD-CH.BSP	; LINE FEED?
-	LBZ	INPEOL		; ...
+	BZ	INPEOL		; ...
 	SMI	CH.CRT-CH.LFD	; CARRIAGE RETURN?
-	LBZ	INPEOL		; ...
+	BZ	INPEOL		; ...
 	SMI	CH.CTU-CH.CRT	; CONTROL-U?
-	LBZ	INPCTU		; ...
+	BZ	INPCTU		; ...
 	SMI	CH.ESC-CH.CTU	; ESCAPE?
-	LBZ	INPESC		; ...
+	BZ	INPESC		; ...
 	SMI	CH.DEL-CH.ESC	; DELETE?
-	LBZ	INPBSP		; ...
+	BZ	INPBSP		; ...
 
 ;   Here for any normal, average, boring, printing ASCII character.  If the
 ; buffer isn't full, then store this one and echo it.  If the buffer IS full,
 ; then echo a bell instead and don't store anything.  Remember that we always
 ; need at least one empty byte left over to store the terminating null!
-INPUT2:	GHI P3\ LBNZ INPU2A	; if the buffer size .GE. 256 then no worries
+INPUT2:	GHI P3\ BNZ INPU2A	; if the buffer size .GE. 256 then no worries
 	GLO P3\ SMI 1		; be sure there is at least 1 byte free
-	LBNF	INPBEL		; nope - the buffer is full
+	BNF	INPBEL		; nope - the buffer is full
 INPU2A:	GLO BAUD\ STR P1	; store the original character in the buffer
 	CALL(TFCHAR)		; and echo it
 	DEC	P3		; decrement the buffer size
 	INC	T1		; increment the character count
 	INC	P1		; and and increment the buffer pointer
-	LBR	INPUT1		; then go do it all over again
+	BR	INPUT1		; then go do it all over again
 
 ; Here if the buffer is full - echo a bell and don't store anything ...
 INPBEL:	LDI	CH.BEL		; ...
 	CALL(CONOUT)		; ...
-	LBR	INPUT1		; and wait for a line terminator
+	BR	INPUT1		; and wait for a line terminator
 
 ; Here for a BACKSPACE or a DELETE - try to erase the last character ...
 INPBSP:	CALL(DELCHR)		; do all the real work
-	LBDF	INPBEL		; ring the bell if there's nothing there
-	LBR	INPUT1		; and then keep going
+	BDF	INPBEL		; ring the bell if there's nothing there
+	BR	INPUT1		; and then keep going
 
 ; Here for CONTROL-U - erase ALL the characters back to the prompt ...
 INPCTU:	CALL(DELCHR)		; try to delete the last character
-	LBNF	INPCTU		; and keep going until the buffer is empty
-	LBR	INPUT1		; then start over again
+	BNF	INPCTU		; and keep going until the buffer is empty
+	BR	INPUT1		; then start over again
 
 ; Here for a CONTROL-C - echo ^C and then terminate input ...
 INPCTC:	SDF			; return DF=1
-	LBR	INPUT3		; and fall into the rest of the EOL code
+	BR	INPUT3		; and fall into the rest of the EOL code
 
 ; Here for ESCAPE - echo "$" and terminate the input ...
 INPESC:	LDI	'$'		; echo a '$'
@@ -1106,14 +1126,14 @@ INPUT3:	LDI 0\ STR P1		; then terminate the input string
 ; and returns with DF=1...
 DELCHR:	SDF			; assume DF=1
 	GLO	T1		; get the character count
-	LBZ	DELCH2		; if it's zero then quit now
+	BZ	DELCH2		; if it's zero then quit now
 	CALL(TBACKSP)		; erase the character from the screen
 	INC	P3		; increment the buffer size
 	DEC	T1		; decrement the character count
 	DEC	P1		; and back up the buffer pointer
 	LDN	P1		; get the character we just erased
 	ANI	~$1F		; is it a control character??
-	LBNZ	DELCH1		; no - quit now
+	BNZ	DELCH1		; no - quit now
 	CALL(TBACKSP)		; yes - erase the "^" too
 DELCH1:	CDF			; and return with DF=0
 DELCH2:	RETURN			; ...
@@ -1145,11 +1165,11 @@ TESTHW:	STXD\ PUSHR(T1)		; save D and T1
 	RLDI(T1,HWFLAGS)	; and point to the hardware flags
 	LDA A\ STR SP		; put the first mask byte on the stack
 	LDA T1\ AND\ XOR	; and test the masked bits
-	LBNZ	TESTH1		; branch if they don't match
+	BNZ	TESTH1		; branch if they don't match
 	LDA A\ STR SP		; then test the second byte
 	LDA T1\ AND\ XOR	; ...
-	LBNZ	TESTH2		; again, branch if they don't match
-	CDF\ LBR TESTH3		; success!!
+	BNZ	TESTH2		; again, branch if they don't match
+	CDF\ BR TESTH3		; success!!
 TESTH1:	INC	A		; skip the second argument byte
 TESTH2:	SDF			; and return failure
 TESTH3:	IRX\ POPR(T1)\ LDX	; restore T1 and D
@@ -1184,15 +1204,173 @@ BIN2BCD:PLO	BAUD		; save the original value
 	STR	SP		; ...
 BIN2B1:	GLO	BAUD		; ...
 	SMI	10		; subtract 10
-	LBNF	BIN2B2		; branch if the result is negative
+	BNF	BIN2B2		; branch if the result is negative
 	PLO	BAUD		; save this
 	LDI	$10		; and increment the BCD most significant digit
 	ADD			; ...
 	STR	SP		; ...
-	LBR	BIN2B1		; keep going until we get underflow
+	BR	BIN2B1		; keep going until we get underflow
 BIN2B2:	ADI	10		; restore the remainder
 	ADD			; and add in the most significant BCD digit
 	RETURN			; we're done
+
+	.SBTTL	Device Name to Number and Number to Name
+
+;++
+;F_DEV2NUM
+;
+;   The DEV2NUM call translates an ASCII device name (e.g. "ID0", "TU1", etc)
+; into the corresponding device number for a call to F_SDREAD/SDWRITE or the
+; F_IDEREAD/F_IDEWRITE calls.  It expects a pointer to first letter of the
+; device name in P1, and returns the corresponding device number in D.  If
+; the name is unknown, then the error (DF=1) return is taken instead.
+;
+;CALL:
+;	P1/ address of first letter of device name
+;	CALL(F_DEV2NUM)
+;	<return with device number in D, or DF=1 if unknown>
+;
+;  Note that on return P1 will be updated to point to the first character in
+; the string which is NOT part of the device name.  For example, conside the
+; string "//id1/foo/baz" - on call, P1 should point to the "i" after the "//"
+; and on return P1 will point to the "/" after the "id1".
+;
+; In the case of no match the values returned in D and P1 both are undefined.
+;
+;   And lastly, note that the match is case insensitive so "ID0" and "id0" will
+; both work.  The case folding on the source string is handled in a rather
+; crude way, by simply setting the $20 bit in the ASCII code, but since our
+; device names contain only letters and numbers this won't generate any
+; spurious matches.
+;
+;   Yes, this is kind of a brute force solution, but we only need to recognize
+; two device names - "ID" and "TU".  This actually takes less code than any of
+; the fancier solutions I could come up with.
+;--
+DEV2NUM:LDA P1\ ORI $20		; get the first character, force lower case
+	SMI 'i'\ LBNZ DEV2N1	; is it "i" (as in IDx)?
+	LDA P1\ ORI $20		; yes check the next character
+	SMI 'd'\ LBNZ DEV2N4	; this one has to match
+	LDI 0\ LBR DEV2N2	; return either 0 or 1 for ID0 or ID1
+
+; Here to check for TUx devices ...
+DEV2N1:	SMI 't'-'i'\ LBNZ DEV2N4; is it "t" (as in TUx)?
+	LDA P1\ ORI $20		; yes - check for the 'u'
+	SMI 'u'\ LBNZ DEV2N4	; no match
+	LDI	2		; yes return either 2 or 3 for TU0 or 1
+
+; Here to decode the unit number ...
+DEV2N2:	PLO BAUD\ LDA P1	; save the base device and get the unit
+	SMI '0'\ LBZ DEV2N3	; unit 0 is good
+	SMI 1\ LBNZ DEV2N4	; and unit 1 is good - anything else is bad
+	INC	BAUD		; bump the device number for unit 1
+DEV2N3:	CDF\ LSKP		; return success!
+DEV2N4:	SDF			; or failure
+	GLO BAUD\ RETURN	; return the device number and we're done
+
+
+;++
+;F_NUM2DEV
+;
+;   The NUM2DEV function will return an ASCIZ string corresponding to the
+; device number passed in D.  
+;
+;CALL:
+;	D/ device number
+;	CALL(F_NUM2DEV)
+;	<return with string pointer in P1, or DF=1 if out of range>
+;
+;   Note that on return P1 will point to a null terminated ASCII string.  This
+; string is almost certainly stored in ROM, so the caller can't change it but
+; it can be copied or printed.  If the device number passed in D is too large,
+; then the error (DF=1) return is taken and the contents of P1 are undefined
+; (in this implementation P1 will be unchanged).
+;--
+NUM2DEV:STR	SP		; save the device number for later
+	SMI	MAXDEV		; is it a legal number?
+	LBGE	NUM2D9		; no return DF=1 and quit
+	LDI HIGH(DNAMES)\ PHI P1; yes, point to the table of names
+	LDI	LOW(DNAMES)	; add the device index to the table address
+	ADD\ ADD\ ADD\ ADD	; times 4 bytes per entry
+	PLO	P1		; and return DF=0 for success
+NUM2D9:	RETURN			; all done
+
+
+; Table of SBC1802 device names ...
+;   In the interest of simplifying the code, this table MUST meet several
+; conditions - 1) each entry must be exactly 4 bytes, 2) the table must be
+; aligned on a 4 byte boundary, and 3) the entire table must fit on the same
+; 256 byte page.
+	.ORG	($ + 3) & $FFFC	; align to a 4 byte boundary
+DNAMES:	.TEXT	"ID0\000"	; select the master drive
+	.TEXT	"ID1\000"	; select the slave drive
+	.TEXT	"TU0\000"	; select TU58 unit 0
+	.TEXT	"TU1\000"	; select TU58 unit 1
+MAXDEV	.EQU	4		; number of names in this table
+#if (DNAMES & $FF00) != ($ & $FF00)
+	.echo	"DNAMES table must fit on one page!"
+#endif
+
+	.SBTTL	Check for ElfOS Boot Sector
+
+;++
+;   This routine will test an ElfOS v5 boot sector for validity.  It assumes
+; the boot sector has been loaded into RAM at $0100 and it will return DF=0
+; if it's a valid boot sector (i.e. no error).
+;
+;CALL:
+;	<load boot sector into RAM at $0100>
+;	CALL(BTCHK5)
+;	<return with DF=0 if a valid boot sector>
+;
+;   Note that for ElfOS v5 the entire boot sector is checksummed (as opposed to
+; v4, which checksums only a small part of it) so an ElfOS v4 (and also David
+; Madole's MiniDOS, which is based on a v4 fork) boot sector will fail!
+;--
+BTCHK5:	RLDI(P1,EO.BBUF)	; P1 = $100 (boot sector)
+	RLDI(P3,511)		; P3 = 511 ($1FF) byte count
+	LDI $FF\ STR SP		; set initial checksum to $FF
+BTCLP5:	LDA P1\ ADD		; add the next byte from the sector
+	PLO BAUD\ SHL		; ring shift the check value
+	GLO BAUD\ SHLC\ STR SP	; update the check value on the stack
+	DEC	P3		; loop until we've done the entire sector
+	GLO P3\ BNZ BTCLP5	; ...
+	GHI P3\ BNZ BTCLP5	; ...
+	LDN P1\ SM		; compare stored check byte to computed value
+	BNZ	BTCFAIL		; and fail if it's not zero
+	CDF\ RETURN		; success!
+BTCFAIL:SDF\ RETURN		; failure
+
+
+;++
+;   This routine will test an ElfOS v4 boot sector for validity.  It assumes
+; the boot sector has been loaded into RAM at $0100 and it will return DF=0
+; if it's a valid boot sector (i.e. no error).
+;
+;CALL:
+;	<load boot sector into RAM at $0100>
+;	CALL(BTCHK5)
+;	<return with DF=0 if a valid boot sector>
+;
+;   Note that for ElfOS v4 only a small part (the first $41 bytes to be exact)
+; of the boot sector is checksummed.  This test will FAIL for an ElfOS v5 
+; boot sector.
+;
+;   HOWEVER, further note that an ElfOS v5 boot sector WILL pass this test
+; (usually, at least, altough that isn't always guaranteed) so if you want to
+; test for both then call BTCHK5 first!
+;--
+BTCHK4:	RLDI(P1,EO.BBUF)	; point to the boot sector in RAM
+	LDI $41\ PLO P3		; number of bytes to check
+	LDI 0\ PLO P2		; initial checksum value
+BTCLP4:	GLO P2\ SEX P1\ ADD	; add the next byte
+	IRX			; ...
+	SHL\ SHR\ SHLC\ PLO P2	; ring shift
+	DEC	P3		; decrement the byte count
+	GLO P3\ BNZ BTCLP4	; loop until we've done all the bytes
+	GLO P2\ SMI $60		; compare checksum against magic value
+	LBNZ	BTCFAIL		; fail if it doesn't match
+	CDF\ RETURN		; success!
 
 	.SBTTL	Extended BIOS Entry Vectors
 
@@ -1266,7 +1444,7 @@ ERRRET:	SDF\ RETURN
 ;--
 GTOD:	CALL(F_TESTHWF)		; test the hardware configuration flags
 	 .BYTE	 H1.RTC, 0	;  ... for the RTC
-	LBDF	RTCRET		; branch if no RTC installed
+	BDF	RTCRET		; branch if no RTC installed
 	PUSHR(DP)		; save a register to work with
 	RLDI(DP,RTCBASE+RTCMON)	; point to the month register
 	LDN DP\ ANI $7F		; strip off the leap year bit
@@ -1313,7 +1491,7 @@ RTCRET:	RETURN			; and we're finally done!
 ;--
 STOD:	CALL(F_TESTHWF)		; test the hardware configuration flags
 	 .BYTE	 H1.RTC, 0	;  ... for the RTC
-	LBDF	RTCRET		; branch if no RTC installed
+	BDF	RTCRET		; branch if no RTC installed
 	PUSHR(DP)		; save a register to work with
 	RLDI(DP,RTCBASE+RTCCSR)	; first set the CSR just to be safe
 	LDI	RT.O32+RT.STRT	; be sure the clock is running
@@ -1324,7 +1502,7 @@ STOD:	CALL(F_TESTHWF)		; test the hardware configuration flags
 	DEC DP\ STR DP		; ...
 	LDI LOW(YEAR)		; point to the year in RAMPAGE
 	PLO DP\ LDA P1\ STR DP	; get that from the caller and save it
-	ANI 3\ LBNZ STOD1	; branch if not a leap year
+	ANI 3\ BNZ STOD1	; branch if not a leap year
 	LDI LOW(RTCBASE+RTCMON)	; yes
 	PLO DP\ LDI RT.LPY	; set the leap year bit
 	SEX DP\ OR\ STR DP	; ... in the month register
@@ -1368,7 +1546,7 @@ STOD1:	LDI LOW(RTCBASE+RTCHRS)	; the hours register is next
 ;	PB1	input		SELECT IN H
 ;	PB2	output		SELECT OUT L
 ;	PB3	input		ERROR L
-;	PB4	input		PAPER OUT L
+;	PB4	input		PAPER OUT H
 ;	PB5..7	input		unused
 ;
 ;   Note that STROBE and ACK are both active low at the connector, however the
@@ -1401,11 +1579,20 @@ PRTIN1:	DLY1MS			; ...
 	SEX SP\ INP PPIB	; read the printer status
 	ANI $02\ LBNZ PRTIN2	; did we find SELECT IN??
 	DBNZ(T1,PRTIN1)		; no - wait a little longer
-	SDF\ LSKP		; the printer must be turned off
-; Success!
-PRTIN2:	CDF			; return DF=0
-	IRX\ POPRL(T1)		; restore T1
-PRTIN9:;;OUTI(GROUP,BASEGRP)	; select the base group again
+PRTI11:	SDF\ LBR PRTIN8		; the printer must be turned off
+;   We have SELECT IN - now check that ERROR is high (it's active low) and that
+; PAPER OUT is low.  Then check the ASTB and BSTB signals to verify that ACK
+; and BUSY are both low (remember that ACK is inverted in the SBC1802 hardware).
+PRTIN2:	LDX\ ANI $18		; check both ERROR and PAPER OUT
+	XRI $08\ LBNZ PRTI11	; check ERROR high and PAPER OUT low
+	INP	PPISTS		; read the ASTB and BSTB status
+	ANI $A0\ LBNZ PRTI11	; both must be zero
+; Success!  We've found a printer ...
+	RLDI(T1,HWFLAGS+1)	; remember that we've found a printer
+	LDN T1\ ORI H0.LPT	;  ... by setting the LPT hardware flag
+	STR T1\ CDF		; return DF=0
+PRTIN8:	IRX\ POPRL(T1)		; restore T1
+PRTIN9:	OUTI(GROUP,BASEGRP)	; select the base group again
 	RETURN			; and we're done
 
 	.SBTTL	Print Characters and Strings
@@ -1427,11 +1614,12 @@ PRTCHAR:PLO	BAUD			; save the character to print
 	PUSHR(T1)\ RCLR(T1)		; keep the timeout in T1
 	OUTI(GROUP,PPIGRP)		; select the PPI/printer group
 
-; Wait for BUSY to be clear ...
-PRTCH1:	SEX SP\ INP PPISTS		; read the status register
-	ANI PP.BSTB\ LBZ PRTCH2		; wait for BUSY clear
-	DLY1MS				; give the printer some time
-	DBNZ(T1,PRTCH1)			; decrement the timeout and keep waiting
+;   Wait for BUSY to be clear ...  Note that starting with T1=0, this gives a
+; total timeout of somewhere around 2.6 seconds.
+PRTCH1:	SEX SP\ INP PPISTS		; [4] read the status register
+	ANI PP.BSTB\ LBZ PRTCH2		; [5] wait for BUSY clear
+	NOP\ NOP\ NOP			; [9] give the printer some time
+	DBNZ(T1,PRTCH1)			; [7] decrement the timeout
 	LBR	PRTCH4			; timeout!
 
 ;   Output the data and assert STROBE ...   Note that the minimum STROBE width
@@ -1449,6 +1637,7 @@ PRTCH3:	SEX SP\ INP PPISTS		; read the printer status again
 PRTCH4:	SDF\ LSKP			; timeout!
 PRTCH5:	CDF				; success!
 	IRX\ POPRL(T1)			; restore T1
+	OUTI(GROUP,BASEGRP)		; be sure the base I/O group is selected
 	GLO BAUD\ RETURN		; and we're done
 
 
@@ -1462,9 +1651,9 @@ PRTCH5:	CDF				; success!
 ;	<return DF=1 if error>
 ;--
 PRTTEXT:LDA	P1		; get the next character to print
-	LBZ	PRTTX1		; branch if we're done
+	BZ	PRTTX1		; branch if we're done
 	CALL(PRTCHAR)		; nope - print this one
-	LBNF	PRTTEXT		; and keep printing
+	BNF	PRTTEXT		; and keep printing
 PRTTX1:	RETURN			; here when we find a null
 
 	.SBTTL	Return Printer Status
@@ -1488,7 +1677,8 @@ PRTTX1:	RETURN			; here when we find a null
 ;--
 PRTSTAT:OUTI(GROUP,PPIGRP)	; select the PPI I/O group
 	SEX SP\ INP PPIB	; and return the status bits
-	RETURN			; return those and we're done!
+	OUTI(GROUP,BASEGRP)	; restore the base I/O group
+	RETURN			; return the status and we're done!
 
 	.SBTTL	Read/Write IDE/ATA Disk Drive Sectors
 
@@ -1525,7 +1715,7 @@ DISKWR:	GHI	T2		; select the correct drive
 DISKW1:	OUT IDEBUF\ OUT IDEBUF	; output four bytes
 	OUT IDEBUF\ OUT IDEBUF	; ...
 	DEC P3\ GLO P3		; loop 128 times for 512 bytes
-	LBNZ	DISKW1		; ...
+	BNZ	DISKW1		; ...
 	SEX SP\ IRX\ POPRL(P3)	; restore P3
 	LBR	WREADY		; wait for the drive to write the sector
 
@@ -1564,7 +1754,7 @@ DISKR1:	INP IDEBUF\ INC P1	; read from the drive and put it in the buffer
 	INP IDEBUF\ INC P1	; ...
 	INP IDEBUF\ INC P1	; ...
 	DEC P3\ GLO P3		; loop 128 times for all 512 bytes
-	LBNZ	DISKR1		; ...
+	BNZ	DISKR1		; ...
 	SEX SP\ IRX\ POPRL(P3)	; restore P3
 	LBR	WREADY		; wait for ready or just return???
 
@@ -1637,7 +1827,7 @@ WRDY1:	SEX SP\ INP IDEBUF	; read the drive's status register
 	LDN	SP		; get the status back
 	ANI	ID.BSY+ID.RDY	; check the BUSY and READY bits
 	XRI	ID.RDY		; want READY set and BUSY clear
-	LBNZ	WRDY1		; keep waiting if not
+	BNZ	WRDY1		; keep waiting if not
 	CDF\ RETURN		; return DF=0 for success
 
 
@@ -1665,13 +1855,13 @@ DSKRET:	RETURN			; and back to the original caller
 ;--
 WDRQ:	RDIDE(IDESTS)		; read the drive status register
 	ANI	ID.BSY		; is the drive still busy?
-	LBNZ	WDRQ		; yes - wait for it to finish
+	BNZ	WDRQ		; yes - wait for it to finish
 	LDN	SP		; get the status bits back again
 	ANI	ID.ERR		; is the error bit set?
 	LBNZ	DRVERR		; yes - failure
 	LDN	SP		; check the status one more time
 	ANI	ID.DRQ		; data transfer request?
-	LBZ	WDRQ		; not yet - keep waiting
+	BZ	WDRQ		; not yet - keep waiting
 	CDF\ RETURN		; success - return DF=0
 
 	.SBTTL	Select IDE/ATA Master or Slave
@@ -1698,20 +1888,20 @@ WDRQ:	RDIDE(IDESTS)		; read the drive status register
 ; drive was present and working for the POST then it's still there now.
 ;--
 DRVSEL:	ANI $10\ PUSHD		; save the master/slave bit
-	LBNZ	DRVSE1		; was the IDE slave selected?
+	BNZ	DRVSE1		; was the IDE slave selected?
 	CALL(TESTHW)		; is the IDE master installed?
 	 .BYTE	 H1.IDE0, 0	; ...
-	LBDF	DRVSE9		; no - just give up now
-	LBR	DRVSE2		; yes - go select it
+	BDF	DRVSE9		; no - just give up now
+	BR	DRVSE2		; yes - go select it
 DRVSE1:	CALL(TESTHW)		; is the IDE slave installedd?
 	 .BYTE	H1.IDE1, 0	; ...
-	LBDF	DRVSE9		; no - give up now
+	BDF	DRVSE9		; no - give up now
 
 ; Wait for the IDE to be not busy and then select the correct drive .
 DRVSE2:	OUTI(GROUP,BASEGRP)	; be sure the base board I/O group is selected
 	OUTI(IDESEL,IDESTS)	; select the drive status register
 DRVS20:	SEX SP\ INP IDEBUF	; read the drive status register
-	ANI ID.BSY\ LBNZ DRVS20	; and loop until BUSY is clear	
+	ANI ID.BSY\ BNZ DRVS20	; and loop until BUSY is clear	
 
 ; Ok, finally we can write the drive select bit!
 	OUTI(IDESEL,IDELBA3)	; LBA3 has the drive select bit
@@ -1724,7 +1914,7 @@ DRVS20:	SEX SP\ INP IDEBUF	; read the drive status register
 DRVSE3:	SEX SP\ INP IDEBUF	; read the status register
 	ANI	ID.BSY|ID.RDY	; test the BUSY and READY bits
 	XRI	ID.RDY		; and wait for BUSY=0 and READY=1
-	LBNZ	DRVSE3		; ...
+	BNZ	DRVSE3		; ...
 	CDF\ RETURN		; all done - return DF=0 for success
 
 ; Here if the drive isn't online ...
@@ -2105,7 +2295,7 @@ TUGET:	RLDI(T2,TUTIMO)		; this is the timeout loop counter
 	OUTI(GROUP,SL1GRP)	; select the SLU1 I/O group
 TUGET1:	SEX SP\ INP SL1STS	; [4] have we received anything?
 	SHR			; [2] put the DA bit in the DF
-	LBNF	TUGET2		; [3] nope - check for timeout
+	BNF	TUGET2		; [3] nope - check for timeout
 	INP	SL1BUF		; get the byte received
 	CDF			; success!
 	RETURN			; and we're done
@@ -2163,24 +2353,24 @@ TUADSM:	STR	SP		; save the data byte for a moment
 	RLDI(DP,TUCKSM)		; point at the checksum accumulator
 	LDN DP\ XRI $FF\ STR DP	; toggle the even/odd byte flag
 	INC	DP		; and point to the low checksum byte
-	LBZ	TUADS1		; branch if this was the odd byte
+	BZ	TUADS1		; branch if this was the odd byte
 
 ; Here for an even byte - add to the checksum LSB ...
 	LDN DP\ ADD\ STR DP	; update the low byte of the checksum
 	INC	DP		; then point to the high byte
-	LBNF	TUADS3		; we're done if no carry is needed
+	BNF	TUADS3		; we're done if no carry is needed
 	LDN DP\ ADI 1\ STR DP	; yes - carry to the high byte
-	LBR	TUADS2		; and do the end around carry
+	BR	TUADS2		; and do the end around carry
 
 ; Here for an odd byte - add to the checksum MSB ...
 TUADS1:	INC	DP		; point to the high byte
 	LDN DP\ ADD\ STR DP	; update the high byte of the checksum
 
 ; Here to do an end around carry after the addition ...
-TUADS2:	LBNF	TUADS3		; branch if no carry needed
+TUADS2:	BNF	TUADS3		; branch if no carry needed
 	DEC	DP		; yes - point to the low byte again
 	LDN DP\ ADI 1\ STR DP	; increment that
-	LBNF	TUADS3		; return if no carry
+	BNF	TUADS3		; return if no carry
 	INC	DP		; otherwise increment the high byte too
 	LDN DP\ ADI 1\ STR DP	; ...
 TUADS3:	LDX \ RETURN		; restore D and we're done
@@ -2218,13 +2408,13 @@ TUTXSM:	RLDI(DP,TUCKSM+1)	; send the low byte first
 ;--
 TURXSM:	RLDI(DP,TUCKSM+1)	; point to the checksum accumulator
 	CALL(TUGET)		; read the low byte first
-	LBDF	TURXS1		; branch if timeout
+	BDF	TURXS1		; branch if timeout
 	SEX DP\ SM		; compare to the checksum accumulator
-	LBNZ	TURXS1		; doesn't match!
+	BNZ	TURXS1		; doesn't match!
 	CALL(TUGET)		; now get the high byte
-	LBDF	TURXS1		; branch if timeout
+	BDF	TURXS1		; branch if timeout
 	INC DP\ SEX DP\ SM	; and compare the high byte
-	LBNZ	TURXS1		; again, branch if they don't match
+	BNZ	TURXS1		; again, branch if they don't match
 	CDF \ RETURN		; return success
 ; Here if the checksum doesn't match ...
 TURXS1:	SDF \ RETURN		; signal failure
@@ -2267,7 +2457,7 @@ TURXS1:	SDF \ RETURN		; signal failure
 ; for a call to DISKRD/DISKWR or TUREAD/TUWRITE.
 ;--
 SDTYPE:	SMI	2		; is the unit number 0 or 1?
-	LBGE	SDTYP1		; no - go check for TU58
+	BGE	SDTYP1		; no - go check for TU58
 
 ; Here if an IDE drive is selected ...
 ;   After the "SMI 2", D will contain $FE if the original unit was 0, and
@@ -2284,7 +2474,7 @@ SDTYP0:	SHL\ SHL\ SHL\ SHL	; put the IDE unit in the upper 4 bits of D
 ; it was 3 then D contains 1.
 SDTYP1:	INC A\ INC A\ INC A	; skip 3 bytes on return
 	SMI	2		; compare to two again
-	LBGE	SDTYP2		; branch if the unit was .GT. 3
+	BGE	SDTYP2		; branch if the unit was .GT. 3
 	ADI	2		; restore the TU58 unit 0 or 1
 	RETURN			; return to the TU58 case
 
@@ -2369,8 +2559,16 @@ SDBOOT:	PUSHD			; save the unit number for later
 	RLDI(P1,EO.BBUF)	;  ... into memory at $0100
 	POPD \ PUSHD		; get unit number, but leave it on the stack
 	CALL(F_SDREAD)		; and read sector zero
-        LBNF	BTELFOS		; branch if no disk error
+        BNF	BTEOS1		; branch if no disk error
 	IRX\ RETURN		; return DF=1 for any hardware error
+
+;   We've successfully read sector zero into memory.  Before blindly jumping
+; in there, test it first to be sure it's a valid boot sector ...
+BTEOS1:	CALL(F_BTCHK4)		; is this a valid ElfOS v4 boot sector?
+	BNF	BTEOS2		; yes - go start it up
+	CALL(F_BTCHK5)		; no - test for ElfOS v5 instead
+	BNF	BTEOS2		; yes - that works too
+	CDF\ IRX\ RETURN	; neither - return with DF=0
 
 ; Select the ElfOS memory map and then jump to the ElfOS boot code ...
 ;   Note that at this point there's no way we can ever return - either
@@ -2381,10 +2579,9 @@ SDBOOT:	PUSHD			; save the unit number for later
 ;   Another thing is that we need to store the unit number we used for
 ; booting in the memory image of the boot sector.  ElfOS uses this to
 ; remember where it came from for all future disk access.
-BTELFOS:POPD			; get the unit one last time
-	;TODO TBA NYI!!		; and store it in the boot block for ElfOS
-	RLDI(T1,MCR)		; access the memory control register
-	LDI MC.ELOS\ STR T1	; and select the ElfOS map
+BTEOS2:	POPD\ PHI T2		; pass the boot unit in R8.1
+	RLDI(DP,MCR)		; access the memory control register
+	LDI MC.ELOS\ STR DP	; and select the ElfOS map
 	LBR	EO.BTSA		; jump to the ElfOS sector 0 code
 
 	.SBTTL	MiniDOS Storage Calls
@@ -2485,8 +2682,8 @@ MDWR1:	CALL(MDTYPE)		; same as MDREAD ...
 	BENTRY(F_LTRIM,    ltrim)	; trim spaces from beginning of a string
 	BENTRY(F_STRCPY,   strcpy)	; copy a string
 	BENTRY(F_MEMCPY,   memcpy)	; copy arbitrary data
-	BUNIMP(F_WRTSEC)		; deprecated
-	BUNIMP(F_RDSEC)			; deprecated
+	BENTRY(F_DEV2NUM,  DEV2NUM)	; translate device name to number
+	BENTRY(F_NUM2DEV,  NUM2DEV)	; translate device number to name
 	BUNIMP(F_SEEK0)			; deprecated
 	BUNIMP(F_SEEK)			; deprecated
 	BUNIMP(F_DRIVE)			; deprecated

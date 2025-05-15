@@ -32,10 +32,13 @@ f_typex:    equ  (BIOS+0ch)            ; depricated, just returns now
 f_input:    equ  (BIOS+0fh)            ; read asciiz from console
 f_strcmp:   equ  (BIOS+12h)            ; compare 2 strings
 f_ltrim:    equ  (BIOS+15h)            ; trim leading spaces
-f_strcpy:   equ  (BIOS+18h)            ; copy an asciiz string
+f_strcpy:   equ  (BIOS+18h)            ; copy an asciz string
 f_memcpy:   equ  (BIOS+1bh)            ; copy memory
-f_wrtsec:   equ  (BIOS+1eh)            ; write floppy sector (depricated)
-f_rdsec:    equ  (BIOS+21h)            ; read floppy sector (depricated)
+;f_wrtsec:  equ  (BIOS+1eh)            ; write floppy sector (depricated)
+;f_rdsec:   equ  (BIOS+21h)            ; read floppy sector (depricated)
+; Note that RDSEC and WRTSEC have been replaced by DEV2NUM and NUM2DEV!
+f_dev2num:  equ  (BIOS+1eh)            ; translate device name to number
+f_num2dev:  equ  (BIOS+21h)            ; translate device number to name
 f_seek0:    equ  (BIOS+24h)            ; floppy seek to track 0 (depricated)
 f_seek:     equ  (BIOS+27h)            ; floopy track seek (depricated)
 f_drive:    equ  (BIOS+2ah)            ; select floppy drive (depricated)
@@ -134,6 +137,9 @@ f_prtinit   equ  (SBIOS+24h)	    ; initialize parallel printer
 f_prtchar   equ  (SBIOS+27h)	    ; print one character
 f_prttext   equ  (SBIOS+2ah)	    ; print null terminated string
 f_prtstat   equ  (SBIOS+2dh)	    ; return printer status
+; Test for valid ElfOS boot sectors ...
+f_btchk4    equ  (SBIOS+30h)	    ; test for ElfOS v4 boot sector
+f_btchk5    equ  (SBIOS+33h)        ; test for ElfOS v5 boot sector
 
 ; SBC1802 debugger breakpoint (cause a trap to f_trap)...
 #define	BPT	MARK\ SEP 1

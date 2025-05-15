@@ -1,23 +1,6 @@
 	.TITLE	UT71 Emulation for Spare Time Gizmos SBC1802
 	.SBTTL	Bob Armstrong [06-OCT-2021]
 
-; the regular OS only seems to use SEEKST, READST and WRITST ...
-; Even DIAG uses only these.
-; FORMAT uses SEEKA, CMD and WAIT.
-; SYSGEN;E uses CMDS and WAITS! (even to seek and read sectors)
-
-;++
-; I/O CONTROL BLOCK
-; -----------------
-;   UT71 allocates an "I/O control block" in RAM at $8F00.  It's not entirely
-; clear to me all the things that this space is used for, however the first
-; five bytes are used by the MicroDOS bootstrap routine (see LOAD) as a 
-; temporary parameter block (see above).  The bytes after that are used by the
-; SEEKA (and SEEKST) routines to store FDC command bytes for the CMD routine.
-; I believe a total of 16 bytes are available for the IOCB in UT71, but don't
-; quote me on that one.
-;
-
 ;               db    db d888888b  db .d888b.  .d88b.  .d888b. 
 ;               88    88 `~~88~~' o88 88   8D .8P  88. VP  `8D 
 ;               88    88    88     88 `VoooY' 88  d'88    odD' 
@@ -57,6 +40,7 @@
 ;
 ;   * And some miscellaneous functions (INIT1/2, SCRT, CKHEX, etc).
 ;--
+
 ;0000000001111111111222222222233333333334444444444555555555566666666667777777777
 ;1234567890123456789012345678901234567890123456789012345678901234567890123456789
 
@@ -68,7 +52,7 @@
 	.INCLUDE "ut71.inc"
 	.LIST
 	
-	.SBTTL	"Revision History"
+	.SBTTL	Revision History
 
 ;++
 ; REVISION HISTORY
@@ -83,11 +67,17 @@
 ;	   None of these do anything except cause errors!
 ;
 ; 005	-- Make the console output routins wait for CTS ...
+;
+; 006	-- Add UT71/UT62 line printer support.
+;
 ; --
-VERMAJ	.EQU	1	; major version number
-VEREDT	.EQU	5	; and the edit level
+VEREDT	.EQU	6	; and the edit level
 
-	.SBTTL	"Implementation Notes"
+; TODO
+; Make the console I/O routines respect the RTS flow control and alternate
+;  console flags!
+
+	.SBTTL	Implementation Notes
 
 ;++
 ; MEMORY LAYOUT
@@ -116,6 +106,12 @@ VEREDT	.EQU	5	; and the edit level
 ; cold start vector, warm start vector, copyright notice, and version. The
 ; first UT71 entry point that we have to match up with is at $80EE for DELAY,
 ; so it's a close call but we're OK for now.
+;
+;   There's a lot of free space in this module, should you want to put it to
+; better use.  The problem is that the free space is broken up into little
+; bits here and there because of all the fixed UT71 and UT62 entry points that
+; we have to work around.  There just aren't any nice, big, empty blocks to
+; work with!
 ;
 ; SCRT
 ; ----
@@ -192,6 +188,16 @@ VEREDT	.EQU	5	; and the edit level
 ; contiguous, so the code in this module just needs to add the MicroDOS PSN
 ; to the starting LBA from the table to get the correct storage device address.
 ;
+; I/O CONTROL BLOCK
+; -----------------
+;   UT71 allocates an "I/O control block" in RAM at $8F00.  It's not entirely
+; clear to me all the things that this space is used for, however the first
+; five bytes are used by the MicroDOS bootstrap routine (see LOAD) as a 
+; temporary parameter block (see above).  The bytes after that are used by the
+; SEEKA (and SEEKST) routines to store FDC command bytes for the CMD routine.
+; I believe a total of 16 bytes are available for the IOCB in UT71, but don't
+; quote me on that one.
+;
 ; REGISTER USAGE
 ; --------------
 ;   This code has been rewritten to use the Elf2K/SBC1802 register names.
@@ -222,6 +228,11 @@ VEREDT	.EQU	5	; and the edit level
 ; list pointer.  
 ;--
 
+; the regular OS only seems to use SEEKST, READST and WRITST ...
+; Even DIAG uses only these.
+; FORMAT uses SEEKA, CMD and WAIT.
+; SYSGEN;E uses CMDS and WAITS! (even to seek and read sectors)
+
 ;   This macro is used to define UT71 entry points.   The labels and addresses
 ; are already defined in UT71.INC, and this macro simply verifies that the
 ; defined entry address matches the actual address.  If it doesn't, then you
@@ -230,7 +241,7 @@ VEREDT	.EQU	5	; and the edit level
 #defcont		\	.echo "VECTOR ERROR FOR vec\n"
 #defcont		\#endif
 
-	.SBTTL	"Delay and Autobaud Routines"
+	.SBTTL	Delay and Autobaud Routines
 
 ;++
 ;   UT71 contains a DELAY routine that generates (what else?) programmed delays.
@@ -265,7 +276,7 @@ DLY2:	SMI	1		; count it down
 	UENTRY(UTTIMALC)	; ...
 	RETURN			; just do nothing 
 
-	.SBTTL	"Console Input Functions"
+	.SBTTL	Console Input Functions
 
 ;++
 ;   UT71 provides three console input functions (at least there are three that
@@ -341,7 +352,7 @@ FND:	ANI $0F\ STXD		; SAVE TEMPORARILY
 	SDF			; SET DF = 1
 	BR	REXIT
 
-	.SBTTL	"Console Output Functions"
+	.SBTTL	Console Output Functions
 
 ;++
 ;   UT71 implements half a dozen or so console terminal output functions -
@@ -424,7 +435,65 @@ HEX2:	SMI	$C6		; ELSE ADD NET 30
 HEX3:	STXD			; AND SAVE
 	BR	BEGIN
 
-	.SBTTL	"Miscellaneous Routines"
+	.SBTTL	Line Printer Output
+
+;++
+;   This routine will send the character in RF.1 (aka P1.1) to the SBC1802
+; parallel port printer using the SBC1802/ElfOS BIOS to do the real work.
+; The MS2000 had a parallel printer interface and in the original UT71 code
+; this routine would output one ASCII character to the printer.
+;
+;   On output line feeds are suppressed, but carriage returns are replaced with
+; a line feed and carriage return pair. DF=1 on return UNLESS the character
+; in RF.1 is an ASCII 'DC3' (end-of-file marker) OR the printer is not ready
+; or connected.
+;
+;CALL:
+;	P1.1/ ASCII character to print
+;	CALL(UTLINEPR)
+;	<return DF=1 on success, DF=0 on EOF or error>
+;--
+PRINT:	SDF\ GHI P1		; is the character a null?
+	LBZ	PRINT9		; yes - ignore it
+	GHI P1\ XRI CH.LFD	; is it a line feed ?
+	LBZ	PRINT9		; yes - just ignore that too
+	GHI P1\ XRI CH.DC3	; or is it a DC3 (XOFF)?
+	CDF\ LBZ PRINT9		; yes - end of file
+
+;   Looks like actually have to print this.  First, set up the SBC1802/ElfOS
+; SCRT routines so we call call BIOS functions.
+	PUSHR(CALLPC)		; save pointers to the ...
+	PUSHR(RETPC)		;  ... MicroDOS SCRT routines
+	RLDI(CALLPC,F_CALL)	; and switch to our SCRT
+	RLDI(RETPC,F_RETURN)	;  ... routines instead
+	PUSHR(P1)		; save P1 for use as a temporary
+
+; See if a line printer is installed ...
+	RLDI(P1,HWFLAGS+1)	; check the SBC1802 hardware flags
+	LDN P1\ ANI H0.LPT	; is the printer installed?
+	LBNZ	PRINT0		; yes - go print
+	CALL(F_PRTINIT)		; no - try to initialize it
+	LBDF	PRINT3		; and give up if we fail
+
+; A printer is there - print this character ...
+PRINT0:	POPD\ PUSHD		; get back RF.1
+PRINT1:	CALL(F_PRTCHAR)		; and print it
+	LBDF	PRINT3		; jump if printer error
+	XRI	CH.CRT		; was it a carriage returnn?
+	LBNZ	PRINT2		; nope - we're done
+	LDI CH.LFD\ LBR PRINT1	; yes - print a line feed too
+
+; Here if any error occurs - resstore SCRt and return DF=0 ...
+PRINT3:	CDF\ LSKP		; return DF=0 and restore registers
+
+; Here if we're successful - restore SCRT and return DF=1 ...
+PRINT2:	SDF			; return DF=1 for success
+	IRX\ POPR(P1)		; restore P1
+	POPR(RETPC)		; restore the SCRT registers
+	POPRL(CALLPC)		; ...
+PRINT9:	RETURN			; and we're finished
+
+	.SBTTL	Miscellaneous Routines
 
 ;++
 ;   The RENTER routine is supposed to restart UT71, but in our case we'll
@@ -502,7 +571,7 @@ ENTER2:	RLDI(RC,UTDELAY)	; DELAY ROUTINE
 	RLDI(SP,UTSTACK)
 	SEX SP\ SEP PC
 
-	.SBTTL	"Primary Entry Point Table"
+	.SBTTL	Primary Entry Point Table
 
 ;++
 ;   This is the first of two UT71 vector table, the second one is at $87D8.
@@ -518,7 +587,7 @@ ENTER2:	RLDI(RC,UTDELAY)	; DELAY ROUTINE
 	UENTRY(UTGOUT71)\   LBR RENTER
 	UENTRY(UTCKHEX)\    LBR CKHXE
 
-	.SBTTL	"MicroDOS Bootstrap"
+	.SBTTL	MicroDOS Bootstrap
 
 ;++
 ;   This routine is called from the SBC1802 monitor UBOOT command to finish
@@ -546,7 +615,7 @@ ENTER2:	RLDI(RC,UTDELAY)	; DELAY ROUTINE
 	RLDI(PC,UDENTRY)	; load the kernel entry point
 	SEP	PC		; and start it up
 
-	.SBTTL	"SEEKST/SEEKA"
+	.SBTTL	SEEKST/SEEKA
 
 ;++
 ;   On the real MS2000, the SEEKST/SEEKA routines seek the selected diskette
@@ -667,7 +736,7 @@ SKDER:	LDI FD.DER\ LSKP	; return "drive error"
 SKDNR	LDI FD.DNR		; return "drive not ready"
 	PLO P2\ RETURN		; error code in P2.0 and we're outta here
 
-	.SBTTL	"Recalibrate Command"
+	.SBTTL	Recalibrate Command
 
 ;++
 ;   With a real floppy, the recalibrate command seeks to track zero.  That's
@@ -709,7 +778,7 @@ RECAL:	GLO R0\ ANI $08		; make sure the unit is 0..7
 	OUTI(GROUP, BASEGRP)	; restore the I/O group
 	RETURN			; and we're done!
 
-	.SBTTL	"UT62 Cassette Tape and Line Printer Entries"
+	.SBTTL	UT62 Cassette Tape and Line Printer Entries
 
 ;++
 ;   For compatibility with the UT62 ROM (used on the RCA Microboard COSMAC
@@ -717,14 +786,7 @@ RECAL:	GLO R0\ ANI $08		; make sure the unit is 0..7
 ; to read/write cassette tapes (yes, audio cassettes!).  Right now these do
 ; nothing, but someday that might change.
 ;
-;   And UT71 defines an entry point for output to a line printer here too.
-; The MS2000 had a parallel printer interface and in the original UT71 code
-; this routine would output one ASCII character from RF.1 to the printer.
-; The SBC1802 has a Centronics printer port (of sorts) if the expansion card
-; is installed and this could conceivably do the same, but we haven't bothered
-; to implement it yet.
-;
-;   FWIWI, none of this really belongs here, with the diskette code, but the
+;   FWIW, none of this really belongs here, with the diskette code, but the
 ; UT71 and UT62 ROMs want the entry points here.  Fortunately we have plenty
 ; of room...
 ;--
@@ -744,9 +806,9 @@ UT62ER:	LBR	RENTER			; just abort for all of them now
 ; Line printer output ...
 	.ORG	UTBASE+$050E		; write character to line printer
 	UENTRY(UTLINEPR)
-	RETURN				; TBA!!  someday...
+	LBR	PRINT
 
-	.SBTTL	"READTR/WRITTR, READST/WRITST, and READA/WRITA"
+	.SBTTL	READTR/WRITTR, READST/WRITST, and READA/WRITA
 
 ;++
 ;   There are six routines, three sets of read/write pairs, that do diskette
@@ -879,7 +941,7 @@ DOIOT5:	LDI	FD.ABE		; set the abnormal termination bit
 	OUTI(GROUP, BASEGRP)	; restore the I/O group
 	RETURN			; and we're done!
 
-	.SBTTL	"CMD and WAIT floppy routines"
+	.SBTTL	CMD and WAIT floppy routines
 
 ;++
 ;   These floppy diskette routines -
@@ -903,7 +965,7 @@ CMD:
 WAIT:	LDI $FF\ PLO P2		; return failure code in AUX (RD) .0!!
 	RETURN			; and just quit
 
-	.SBTTL	"Disk Entry Vectors"
+	.SBTTL	Disk Entry Vectors
 
 	.ORG	UTBASE+$07D8
 	UENTRY(UTCFRETS)\   LBR CFRET	; command file return point

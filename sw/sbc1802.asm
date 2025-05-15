@@ -352,14 +352,34 @@
 ; 089	-- All the HELP command output to be interrupted.
 ;
 ; 090	-- Edit 88 broke the ";" and ":" commands!  Fix that ...
+;
+; 091	-- Remove STRNCPY - it's not used.
+;
+; 092	-- Rewrite IDE detection and identify code so that it works with the
+;	   Hitachi microdrive. 
+;
+; 093	-- Rewrite the PSG POST test to use register R0 (tone register A) for
+;	   testing rather than I/O port A or B.  There are some variants of
+;	   the chip which apparently don't implement either!
+;
+; 094	-- Move BTCHK4 and BTCHK5 back to the BIOS so that the F_SDBOOT and
+;	   F_IDEBOOT functions can call them.
+;
+; 095	-- Remove GETDEV and PRTDEV and replace them with calls to F_DEV2NUM
+;	   and F_NUM2DEV.
+;
+; 096	-- Change the names of IDE0/1 to ID0/1 and SLU0/1 to SL0/1 to be
+;	   consistent with the other device names.  Fix the help too.
+;
+; 097	-- Make the SHOW DISK and SHOW TAPE commands give the file system type
+;	   (LAT-16 or LAT-32) for an ElfOS volume.
 ;--
-VEREDT	.EQU	90	; and the edit level
+VEREDT	.EQU	97	; and the edit level
 
 ; TODO LIST
-; **** APPROXIMATELY 25 FREE BYTES ARE LEFT IN THIS FIRMWARE!!!! ****
+; **** APPROXIMATELY 200 FREE BYTES ARE LEFT IN THIS FIRMWARE!!!! ****
 ;
 ; ADD "SET RESTART BASIC" TO BOOT INTO BASIC!
-; MODIFY MICRODOS CONSOLE I/O TO RESPECT FLOW CONTROL AND ALTERNATE CONSOLE??
 ; USE DAVID'S CHECKSUM ALGORITHM?
 ; ADD A PLAY COMMAND TO PLAY MIDITONES DOWNLOADED TO RAM?
 ; ADD A TONE COMMAND ("TONE <channel> <frequency>") TO TEST THE PSGs
@@ -743,8 +763,8 @@ RAMIN1:	LDI	$00		; set memory to zero
 	RLDI(DP,UTDKEND-1)	; it's easiest to do this backwards
 RAMIN2:	SEX DP\ LDI $FF		; set every byte to $FF
 	STXD\ GLO DP		; ...
-;;	SMI	LOW(UTDKMAP)	; have we done them all
-;;	LBDF	RAMIN2		; loop until we have
+	SMI	LOW(UTDKMAP)	; have we done them all
+	LBDF	RAMIN2		; loop until we have
 
 ; If the year isn't set, then default to the build year for this firmware ...
 	LDI LOW(YEAR)\   PLO DP	; store in the current year
@@ -1407,20 +1427,11 @@ NOCTC:	SEX PC0\ OUT GROUP	; restore the default I/O group select
 ; ago!
 ;
 ;   That makes a self test kind of challenging, since we have no way to know
-; really whether it is working or not.  However, the 8910 has two general
-; purpose I/O ports, A and B, which can be programmed as outputs and have no
-; effect on the sound generation.  In the SBC1802 the port A pins are brought
-; out to connectors and, like the PPI ports, we don't know what they might be
-; connected to.
-;
-;   BUT, the 8912 DIP28 version of the chip used in the SBC1802 only has pins
-; for port A, however internally the register for port B is still implemented.
-; It's just not bonded out to any pins.  That means we can do a simple read/
-; write test on port B to determine if the AY-3-8912 chips are installed and
-; whether they're connected up correctly.  Admittedly it's not much of a test
-; for a sound generator chip, but it's the best we can do here.  You can
-; always use the "TEST PSG" command if you actually want to hear some sounds
-; out of it!
+; really whether it is really doing anything or not.  However, we do the best
+; we can by writing all 256 possible values to the channel A tone register
+; (R0) of both PSG chips.  We read the values back and verify them, and that at
+; least tells us that the two PSG chips are present, that they're separately
+; addressable, and that all 8 data bits are wired up correctly.
 ;
 ;   And notice I say "chips" because the SBC1802 actually has two of them, for
 ; a total of six channel synthesizer channels.  In theory you could install
@@ -1428,45 +1439,17 @@ NOCTC:	SEX PC0\ OUT GROUP	; restore the default I/O group select
 ; don't officially support that configuration.  Both 8912 chips need to be
 ; present for this test to pass.
 ;
-;   Also notice that the addressing of two PSG chips is a little wierd because
+;   Lastly, note that the addressing of two PSG chips is a little wierd because
 ; the PSG A8/COSMAC N2 chip select input is latched WHEN THE ADDRESS PORT IS
 ; WRITTEN!  See the notes in the AY-3-8912 section of the sbc1802.inc file
-; for more details.  And lastly note that sbc1802.inc has some handly OUTPSG1
+; for more details.  And moreover note that sbc1802.inc has some handly OUTPSG1
 ; and OUTPSG2 macros that we CAN'T USE HERE because they assume the PC is R3!
 ;--
 PSGTST:	POST(POST4)		; POST code 4 - PSG test
 	OUT GROUP\ .BYTE PSGGRP	; select the PSG I/O group
-	OUT PSG1ADR\ .BYTE PSGR7; select PSG control register R7
-	OUT PSGDATA\ .BYTE $80 	; and program port B as output
-	OUT PSG2ADR\ .BYTE PSGR7; now do the same for PSG #2
-	OUT PSGDATA\ .BYTE $80 	; ...
-	LDI 0\ PLO P1\ SEX SP	; start testing with zero
 
-;  Write all 256 possible values to port B of both PSGs ...
-PSGTS1:	SEX PC0\ OUT PSG1ADR	; select PSG#1 port B (register R17)
-	 .BYTE	 PSGR17		; ...
-	GLO P1\ STR SP\ SEX SP	; get the test pattern
-	OUT PSGDATA\ DEC SP	; and load port PSG #1 port B
-	SEX PC0\ OUT PSG2ADR	; now select PSG#2 port B
-	 .BYTE	 PSGR17		; ...
-	GLO P1\ XRI $FF\ STR SP	; complement the test pattern
-	SEX SP\ OUT PSGDATA	; ... and load PSG #2 port B
-	DEC	SP		; ...
-	SEX PC0\ OUT PSG1ADR	; now select PSG#1 again
-	 .BYTE	 PSGR17		; ...
-	SEX SP\ INP PSGDATA	; read back PSG#1 port B
-	DEC	SP		; ...
-	SEX PC0\ OUT PSG2ADR	; then select PSG#2
-	 .BYTE	 PSGR17		; ...
-	SEX SP\ INP PSGDATA	; read PSG#2 port B
-	INC SP\ ADD\ ADI 1	; they should be complements
-	LBNZ	NOPSG		; no PSG if they're not
-	INC P1\ GLO P1		; have we done 256 passes ?
-	LBNZ	PSGTS1		; keep going until we have
-
-; Here if both PSGs are good!
-PSGTS9:	SEX	PC0			; ...
-; Disable PSG#1 for now ...
+;   Start by blindly (since we don't yet know whether the PSG chips are out
+; there or not) disabling all sound output from both chips ...
 	OUT PSG1ADR\ .BYTE PSGR10	; mute PSG#1 channel A
 	OUT PSGDATA\ .BYTE $00		; ...
 	OUT PSG1ADR\ .BYTE PSGR11	; mute PSG#1 channel B
@@ -1475,8 +1458,7 @@ PSGTS9:	SEX	PC0			; ...
 	OUT PSGDATA\ .BYTE $00		; ...
 	OUT PSG1ADR\ .BYTE PSGR7	; turn off all mixer inputs
 	OUT PSGDATA\ .BYTE $3F		; ports A and B are inputs
-; Disable PSG#2 too ...
-	OUT PSG2ADR\ .BYTE PSGR10	; ...
+	OUT PSG2ADR\ .BYTE PSGR10	; now do the same for PSG#2
 	OUT PSGDATA\ .BYTE $00		; ...
 	OUT PSG2ADR\ .BYTE PSGR11	; ...
 	OUT PSGDATA\ .BYTE $00		; ...
@@ -1484,8 +1466,34 @@ PSGTS9:	SEX	PC0			; ...
 	OUT PSGDATA\ .BYTE $00		; ...
 	OUT PSG2ADR\ .BYTE PSGR7	; ...
 	OUT PSGDATA\ .BYTE $3F		; ...
-; Set the PSG present hardware flag ...
-	GLO	P4		; set the PSG OK bit
+
+;   Now write all 256 possible values to the PSG#1 tone generator A fine pitch
+; control (register R0), and write the complement of that value to PSG#2 R0.
+; Read them back and make sure that they both work.  Note that this will not
+; generate any sounds, since we've muted all PSG channels.
+PSGTS1:	SEX PC0\ OUT PSG1ADR	; select PSG#1 register R0
+	 .BYTE	 PSGR0		; ...
+	GLO P1\ STR SP\ SEX SP	; get the test pattern
+	OUT PSGDATA\ DEC SP	; and load port PSG #1
+	SEX PC0\ OUT PSG2ADR	; now select PSG#2 register R0
+	 .BYTE	 PSGR0		; ...
+	GLO P1\ XRI $FF\ STR SP	; complement the test pattern
+	SEX SP\ OUT PSGDATA	; ... and load PSG #2 port B
+	DEC	SP		; ...
+	SEX PC0\ OUT PSG1ADR	; now select PSG#1 again
+	 .BYTE	 PSGR0		; ...
+	SEX SP\ INP PSGDATA	; read back PSG#1 register R0
+	DEC	SP		; ...
+	SEX PC0\ OUT PSG2ADR	; then select PSG#2
+	 .BYTE	 PSGR0		; ...
+	SEX SP\ INP PSGDATA	; read PSG#2 register R0
+	INC SP\ ADD\ ADI 1	; they should be complements
+	LBNZ	NOPSG		; no PSG if they're not
+	INC P1\ GLO P1		; have we done 256 passes ?
+	LBNZ	PSGTS1		; keep going until we have
+
+; Both PSGs are good!  Set the PSG present hardware flag ...
+PSGTS9:	GLO	P4		; set the PSG OK bit
 	ORI	H0.PSG		; ... in the hardware configuration
 	PLO	P4		; ...
 
@@ -1616,39 +1624,34 @@ IDETST:	OUTI(LEDS,POST1)	; POST 1 - IDE Initialization (DON'T USE POST())
 ;
 ;   Simple, no?  I hope it works :)
 ;--
-	OUTI(IDESEL,IDESTS)	; select the drive status register
+	OUTI(GROUP,BASEGRP)	; just in case!
+	OUT IDESEL\ .BYTE IDESTS; select the drive status register
 	SEX SP\ INP IDEBUF	; and try to read it
 	ANI $C0\ LBZ NOIDE	; no drive if these bits are zero
 
-;   Ok, now we think there's a drive out there and it's probably still executing
+;   Ok, we think there's a drive out there and it's probably still executing
 ; its internal diagnostic.  We have to wait for the BUSY bit to be clear and
 ; the READY bit to set, but we wait with a timeout just in case we were wrong
 ; about a drive being connected.  If we timeout, then there's no drive.  Note
 ; that according to the ATA spec, the drive is allowed up to 30 seconds (!!)
 ; to finish its internal diagnostic.  
-	RLDI(T2,IDDTMO)		; diagnostic timeout - 32 seconds (more or less)
-IDETS1:	SEX SP\ INP IDEBUF	; read the drive status
-	ANI ID.BSY\ LBNZ IDET10	; test the busy bit
-	LDN	SP		; get the status bits back
-	ANI ID.RDY\ LBNZ IDETS2	; and see if the READY bit is set
-IDET10:	DLY1MS			; otherwise waste 2ms
-	DBNZ(T2,IDETS1)		; and decrement the timeout
-	LBR	NOIDE		; timeout - assume there's no drive after all
+;;	RLDI(T2,IDDTMO)		; diagnostic timeout - about 32 seconds
+;;IDETS1:SEX SP\ INP IDEBUF	; read the drive status
+;;	ANI ID.BSY\ LBNZ IDET10	; test the busy bit
+;;	LDN	SP		; get the status bits back
+;;	ANI ID.RDY\ LBNZ IDETS2	; and see if the READY bit is set
+;;IDET10:DLY1MS			; otherwise waste 1ms
+;;	DBNZ(T2,IDETS1)		; and decrement the timeout
+;;	LBR	NOIDE		; timeout - assume there's no drive after all
 
-;   We know that the master drive exists, it's selected, and it's ready and
-; not busy.  Now we want to disable interrupts and select 8 bit mode.  Note
-; that writing the DEVICE CONTROL register (to disable interrupts) should not
-; cause the drive to become BUSY and we don't need to wait for it to complete.
-; However, setting the 8 bit feature code does and we'll have to wait for
-; completion on that.
-IDETS2:	CALL(IDEINI)		; clear reset, disable interrupts
+;   We know (or we think we know) that at least one drive exists, so select
+; the master drive.  Initialize the drive by disabling interrupts and selecting
+; 8 bit mode, and then send it an IDENTIFY DEVICE command to figure out what
+; kind of drive it is and how big it is.
+IDETS2:	LDI 0\ CALL(DRVSEL)	; select the master drive
 	LBDF	NOIDE		; no drive if there's a timeout
-	ANI	ID.DRQ|ID.ERR	; no drive if either of these is set too
-	LBNZ	NOIDE		; ...
-
-;   The final step is to send an IDENTIFY DEVICE command to the master drive.
-; If it responds to this, then we know for sure that it exists and that it's 
-; (probably!) working.
+	CALL(IDEINI)		; select 8 bit mode
+	LBDF	NOIDE		; timeout
 	RLDI(P1,CMDBUF)		; need a temporary buffer for the drive name
 	CALL(DISKID)		; send the IDENTIFY DEVICE command
 	LBDF	NOIDE		; just bail if any errors occur
@@ -1662,23 +1665,12 @@ IDETS2:	CALL(IDEINI)		; clear reset, disable interrupts
 	PHI	P4		; ...
 
 ;   Now try to figure out if a slave drive exists too.  The first step is to
-; select it by setting the DEV bit in the LBA3 register.  According to the
-; ATA spec, this change takes place immediately (well, within 400ns).  Make
-; sure the slave isn't busy, and then initialize it too.  Note that we can
-; take a shortcut to drive detection here - at this time the slave status
-; register should never be zero.  Either BUSY or READY and maybe ERROR should
-; always be set.  So if the status register is zero then we know the slave
-; doesn't exist.
-	OUTI(IDESEL,IDELBA3)	; write to the LBA3 register
-	OUTI(IDEBUF,ID.SLV)	; and select the slave drive
-	RDIDE(IDESTS)		; 
-	LBZ	NOIDE1		;
+; select it and, if that works, then we initialize the slave and send it an
+; IDENTIFY DEVICE command just like we did with the master drive.
+	LDI 1\ CALL(DRVSEL)	; try to select the slave drive
+	LBDF	NOIDE1		; timeout
 	CALL(IDEINI)		; try to initialize this drive
 	LBDF	NOIDE1		;  ... slave doesn't exist
-	ANI	ID.DRQ|ID.ERR	;  ... same if there's an error reported
-	LBNZ	NOIDE1		;  ...
-
-; Send IDENTIFY DEVICE to the slave and print it's size and model too ...
 	RLDI(P1,CMDBUF)		; temporary buffer for the drive name
 	CALL(DISKID)		; send the IDENTIFY DEVICE command
 	LBDF	NOIDE1		; just bail if any errors occur
@@ -1736,7 +1728,7 @@ SYSI41:	OUTSTR(HLPMSG)		; always be helpful
 	LBR	MAIN		; skip the restart code and read a command
 
 ; A helpful message ...
-HLPMSG:	.TEXT	"\r\nFor help type HELP\r\n\r\n\000"
+HLPMSG:	.TEXT	"\r\nFor help type HELP\r\n\n\000"
 
 	.SBTTL	Warm Start and Unimplemented BIOS Trap
 
@@ -2579,9 +2571,11 @@ INIRE1:	LDI 0\ STXD		; zap another byte
 ;--
 BOOCMD:	CALL(ISEOL)		; was a device name given ?
 	LBDF DEFBOO		; default to unit 0 if not
-	CALL(GETDEV)		; get the storage device unit number
+	CALL(F_DEV2NUM)		; try to parse a device name
+	LBDF	CMDERR		; unknown device name
 	PUSHD			; and save that for a moment
-	CALL(CHKEOL)		; make sure there are no more arguments
+	CALL(CHKDEV)		; check for a ':'
+	CALL(CHKEOL)		; and make sure there are no more arguments
 	LBR	BOOCM2		; and then go boot
 
 ;   Enter here at DEFBOO to boot from the default device (unit 0).  Enter at
@@ -2594,7 +2588,8 @@ AUTOBT:	PUSHD			; save that on the stack
 ; Boot the unit on the stack...
 BOOCM2:	OUTSTR(EBTMSG)		; tell the user what we're doing
 	POPD\ PUSHD		; get the unit number back
-	CALL(PRTDEV)		; and type the device name
+	CALL(F_NUM2DEV)		; translate that to a name
+	CALL(F_MSG)		; and print it
 	INLMES(" ...")		; ...
 	CALL(TCRLF)		; ...
 	POPD			; restore the unit number
@@ -2757,7 +2752,10 @@ UMAP:	CALL(ISEOL)		; are there any arguments at all?
 ;--
 UMAP0:	GLO P2\ PHI T3		; save the virtual diskette unit
 	ANI $F8\ LBNZ CMDERR	; bail if it's not 0..7
-	CALL(GETDEV)\ PLO T3	; get a device name and save that
+	CALL(F_LTRIM)		; skip any spaces
+	CALL(F_DEV2NUM)\ PLO T3	; get a device name and save that
+	LBDF	CMDERR		; unknown device name
+	CALL(CHKDEV)		; check for a ':'
 	CALL(ISEOL)		; is there a file name?
 	LBDF	UMAP1		; no use offset zero
 
@@ -2820,7 +2818,8 @@ ULSMA2:	INLMES("MicroDOS unit "); start the message
 	INLMES(" mapped to ")	; ...
 	LDN DP\ ANI $F0		; get the storage device unit
 	SHR\ SHR\ SHR\ SHR	;  ... that it's mapped to
-	CALL(PRTDEV)		; print the device name
+	CALL(F_NUM2DEV)		; translate that to a name
+	CALL(F_MSG)		; and print it
 	INLMES(" offset ")	; ...
 	LDA DP\ ANI $0F\ PHI T2	; assemble the base LBN ...
 	LDA DP\ PLO T2		; ...
@@ -2850,7 +2849,11 @@ ULSMA3:	INC P2\ GLO P2		; have we done all eight?
 ; function - sorry).  This limits us to dumping only the first 32Mb or so of
 ; disk space.  That's probably good enough ...
 ;--
-DDUMP:	CALL(GETDEV)\ PUSHD	; get the drive number and save that
+DDUMP:	CALL(F_LTRIM)		; skip any spaces
+	CALL(F_DEV2NUM)		; get the drive number
+	LBDF	CMDERR		; bad device name
+	PUSHD			; save the device number for later
+	CALL(CHKDEV)		; check for a ':' too
 	CALL(DECNQ)		; and get the block number
 	CALL(CHKEOL)		; that should be the end of the command
 	POPD\ PUSHD		; get the unit number back
@@ -2875,11 +2878,16 @@ DDUMP:	CALL(GETDEV)\ PUSHD	; get the drive number and save that
 ;	- or -
 ;	>>>FORMAT TUn
 ;--
-FORMAT:	CALL(GETDEV)\ PUSHD	; get the drive number and save that
+FORMAT:	CALL(F_LTRIM)		; skip any spaces
+	CALL(F_DEV2NUM)		; get the drive number
+	LBDF	CMDERR		; bad device name
+	PUSHD			; save the device number for later
+	CALL(CHKDEV)		; check for a ':'
 	CALL(CHKEOL)		; should be no more arguments
 	OUTSTR(FWNMSG)		; warn that this will erase all data
 	POPD\ PUSHD		;  ... and give the device name
-	CALL(PRTDEV)		;  ...
+	CALL(F_NUM2DEV)		;  ...
+	CALL(F_MSG)		;  ...
 	INLMES("!\r\n")		;  ...
 	CALL(CONFIRM)		; ask "Are you really, really sure??"
 	LBNF	FORM99		; abort if he says no
@@ -2916,64 +2924,6 @@ FORM99:	RETURN
 
 FWNMSG:	.TEXT	"THIS WILL ERASE ALL DATA ON \000"
 WRTMSG:	.TEXT	"\rWRITING ... \000"
-
-	.SBTTL	Scan or Print Storage Device Names
-
-;++
-;   This routine will parse a storage device name - ID0, ID1, TU0 or TU1.
-; If it succeeds it returns the storage device number in D, as would be used
-; by a call to F_SDREAD/SDWRITE/SDRESET or F_SDBOOT.  If it fails to match
-; the device name then it just jumps to ERRALL and aborts the command.
-;--
-GETDEV:	RLDI(P2,SDTBL)		; point to the table of names
-	LBR	COMND		; parse the name and return
-
-; Here when the name is recognized ...
-GETDE1:	PLO	BAUD		; save the device number
-	LDN P1\ XRI ':'\ LSNZ	; is there a ":" next?
-	 INC P1\ NOP		; yes - skip over that
-	GLO BAUD\ RETURN	; and we're done
-	
-; Table of drive names ...
-SDTBL:	CMD(3, "ID0", SDID0)	; select the master drive
-	CMD(3, "ID1", SDID1)	; select the slave drive
-	CMD(3, "TU0", SDTU0)	; select TU58 unit 0
-	CMD(3, "TU1", SDTU1)	; select TU58 unit 1
-	.BYTE 0
-
-
-; Here to select the master IDE drive 
-SDID0:	CALL(HWTEST)		; make sure it's really installed
-	 .WORD	 HWIDE0		; ...
-	LDI 0\ LBR GETDE1	; return with D=0
-
-; Here to select the slave IDE drve ...
-SDID1:	CALL(HWTEST)		; make sure IDE1 exists
-	 .WORD	 HWIDE1		; ...
-	LDI 1\ LBR GETDE1	; return with storage unit 1
-
-;   The TU58 drives require that SLU1 be installed, but beyond that we
-; don't have any hardware configuration bit to indicate they exist.
-; We'll just try to use them and if they don't exist then it'll fail.
-SDTU0:	LDI 2\ LSKP		; select TU58 unit 0
-SDTU1:	LDI 3			; select TU58 unit 1
-	PUSHD			; save the selected unit
-	CALL(HWTEST)		; make sure that SLU1 is installed
-	 .WORD	HWSLU1		;  ...
-	POPD\ LBR GETDE1	; and return the unit if it does
-
-
-;   This routine will print the storage device name, given the unit number
-; in D.  In some sense, it's the reverse of GETDEV ...
-PRTDEV:	SHL\ SHL		; each name takes 4 bytes
-	ADI	LOW(DEVNMS)	; index into the device name table
-	PLO	P1		; ...
-	LDI 0\ ADCI HIGH(DEVNMS); add the high part too
-	PHI	P1		; ...
-	LBR	F_MSG		; print the name and return ...
-
-; Table of device names; exactly FOUR CHARACTERS EACH!
-DEVNMS	.TEXT	"ID0\000ID1\000TU0\000TU1\000"
 
 	.SBTTL	BASIC Command and Support
 
@@ -3111,7 +3061,7 @@ SHOCMD:	CMD(3, "REGISTERS"    , SHOREG)	; show registers (after a breakpoint)
 	CMD(2, "DP"           , DPDUMP)	; show monitor data page
 	CMD(3, "RTC"          , SHOWRTC); show the real time clock
 	CMD(2, "EF"           , SHOWEF)	; print status of EF inputs
-	CMD(3, "SLU"          , SHOSLU)	; print SLU0 settings
+	CMD(3, "SERIAL"       , SHOSLU)	; print SL0 and SL1 settings
 	CMD(4, "CONFIGURATION", SHOCFG)	; print hardware configuration
 	CMD(3, "BATTERY"      , BATCMD)	; show backup battery state
 	CMD(2, "OSTYPE"       , SHOOST)	; show current operating system
@@ -3131,8 +3081,8 @@ SET:	CALL(ISSPAC)		; need a space after "SET"
 
 SETCMD:	CMD(1, "Q",	    SETQ)	; set Q (for testing)
 	CMD(2, "RTC",       SETRTC)	; set the real time clock
-	CMD(4, "SLU0",	    SETSL0)	; set SLU0 parameters
-	CMD(4, "SLU1",      SETSL1)	; set SLU1 parameters
+	CMD(3, "SL0",	    SETSL0)	; set SLU0 parameters
+	CMD(3, "SL1",	    SETSL1)	; set SLU1 parameters
 	CMD(4, "YEAR",      SETYR)	; set the current year
 	CMD(3, "CONSOLE",   SETCONS)	; set the console to SLU0 or 1
 	CMD(2, "OSTYPE",    SETOST)	; set the operating system type
@@ -3151,7 +3101,7 @@ TSTCMD:	CMD(4, "RAM0",   TSTRM0); exhaustive test for RAM0 chip
 	CMD(4, "RAM1",   TSTRM1);   "    "    "    "  RAM1  "
 	CMD(3, "ROM",    TSTROM); verify ROM/EPROM/EEPROM checksum
 	CMD(3, "PSG",	 TSTPSG); AY-3-8912 sound generator
-	CMD(3, "SLU",	 SLULPB); loop SLU0 and SLU1
+	CMD(3, "SERIAL", SLULPB); loop SLU0 and SLU1
 	CMD(3, "PRINTER",TSTPRT); test parallel printer
 	.BYTE	0
 
@@ -3439,7 +3389,6 @@ SHOEF1:	GLO	P2		; get the desired I/O group
 	LDI	($D0+RETPC)	; finish off the little subroutine
 	STR	P4		;  ...
 				; and start dumping the EFx flags
-				
 ; Print EF1...
 	INLMES("EF1=")		; print the flag name
 	CALL(IOTBUF)		; select the right group
@@ -3520,20 +3469,20 @@ DDUMP1:	RLDI(P3,DPBASE)		; start dumping from here
 	RLDI(P4,DPEND)		; and stop here
 	LBR	MEMDMP		; dump it out in the usual format
 
-	.SBTTL	SHOW SLU Command
+	.SBTTL	SHOW SERIAL Command
 
 ;++
-;   The SHOW SLU command will show the settings, baud rate and character format,
-; for SLU0 and, if it is installed, SLU1.  Note that SLU0 is fixed at 8N1,
-; however the baud rate can be changed.  SLU1 allows both the baud rate and the
-; character format to be changed.
+;   The SHOW SERIAL command will show the settings, baud rate and character
+; format, for SLU0 and, if it is installed, SLU1.  Note that SLU0 is fixed at
+; 8N1, however the baud rate can be changed.  SLU1 allows both the baud rate
+; and the character format to be changed.
 ;
-;	>>>SHOW SLU
+;	>>>SHOW SERIAL
 ;--
 SHOSLU:	CALL(CHKEOL)		; no arguments allowed
 
 ; SLU0 is always installed, one way or another ...
-	INLMES("SLU0: ")		; tell him what's coming
+	INLMES("SL0: ")		; tell him what's coming
 	RLDI(DP,SLBAUD)\ LDN DP	; get the baud rate
 	PHI	P3		; store that
 	LDI SL.8N1\ PLO P3	; and SLU0 is fixed at 8N1
@@ -3547,7 +3496,7 @@ SHOS01:	CALL(TCRLF)		; ...
 	CALL(F_TESTHWF)		; see if SLU1 is present
 	 .BYTE	0, H0.SLU1	; ...
 	LBDF	SHOSLX		; quit now if it's not installed
-	INLMES("SLU1: ")	; ...
+	INLMES("SL1: ")		; ...
 	RLDI(DP,SLBAUD)\ LDN DP	; get the SLU1 baud rate
 	SHR\ SHR\ SHR\ SHR	; baud rate for SLU1 is in the upper 4 bits
 	PHI	P3		; ...
@@ -3609,27 +3558,27 @@ EPEPI:	.BYTE	'O'		; EPE=0 PI=0
 	.BYTE	'E'		; EPE=1 PI=0
 	.BYTE	'N'		; EPE=1 PI=1
 
-	.SBTTL	SET SLU0/SLU1 Command
+	.SBTTL	SET SL0/SL1 Command
 
 ;++
-;   The SET SLU command lets you change the settings for either SLU0 or 1.
+;   The SET SL0/1 command lets you change the settings for either SLU0 or 1.
 ; For SLU0 only the baud rate can be changed, however for SLU1 both the baud
 ; rate and the character format (e.g. 8N1, 7E2, etc) can be specified.
 ;
-;	>>>SET SLU0 bbbbb
+;	>>>SET SL0 bbbbb
 ;	- or -
-;	>>>SET SLU1 bbbbb
+;	>>>SET SL1 bbbbb
 ;	- or -
-;	>>>SET SLU1 bbbbb fff
+;	>>>SET SL1 bbbbb fff
 ;	- or -
-;	>>>SET SLU0 RTS|NORTS
+;	>>>SET SL0 RTS|NORTS
 ;
 ;    Where "bbbbb" is a standard baud rate (e.g. 9600, 19200, 300, etc) and
 ; "fff" is a character format (8N1, 7E2, etc).  Note that the CDP1854 only
 ; supports EVEN, ODD or NO parity - force mark and force space parity are not 
 ; supported, although the software could fake those.
 ;
-;   The last option, "SET SLU0 RTS|NORTS" allows RTS/CTS flow control to be
+;   The last option, "SET SL0 RTS|NORTS" allows RTS/CTS flow control to be
 ; enabled or disabled on SLU0.  This option is only supported on SLU0!
 ;
 ;   Serial port settings are saved in the RAM and, if the battery backup is
@@ -3638,7 +3587,7 @@ EPEPI:	.BYTE	'O'		; EPE=0 PI=0
 ; effect IMMEDIATELY, so be prepared!
 ;--
 
-; Here for SET SLU0 ...
+; Here for SET SL0 ...
 SETSL0:	CALL(F_LTRIM)\ LDN P1	; get the first letter of the argument
 	CALL(ISHEX)		; is it a digit?
 	LBNF	SETS02		; branch if not
@@ -3673,7 +3622,7 @@ CLRRTS:	CALL(CHKEOL)		; must be the end of the line
 	PHI BAUD\ LBR SLBDUP	; and save the console settings
 
 
-; Here for SET SLU1 ...
+; Here for SET SL1 ...
 ;   Note that this command always fails if SLU1 is not installed.  You might
 ; think that it would be a harmless waste of time if SLU1 is absent, but
 ; remember that without the expansion board there's no I/O group selection.
@@ -3753,15 +3702,15 @@ SETFM6:	LDN SP\ RETURN		; return the flag byte and we're done
 	.SBTTL	SET CONSOLE command
 
 ;++
-;   The SET CONSOLE  SLU1 command allows you to redirect all console I/O,
+;   The SET CONSOLE  SL1 command allows you to redirect all console I/O,
 ; including stuff from this monitor, ElfOS and even MicroDOS, to an alternate
-; console on SLU1.  This is handy when you have a VT1802 or VIS1802 semi-
-; permanently connected to SLU0 and you temporarily want to use your PC as the
+; console on SL1.  This is handy when you have a VT1802 or VIS1802 semi-
+; permanently connected to SL0 and you temporarily want to use your PC as the
 ; console.  You can return to normal with the SET CONSOLE SLU0 command.
 ;
-;	>>>SET CONSOLE SLU1
+;	>>>SET CONSOLE SL1
 ;	- or -
-;	>>>SET CONSOLE SLU0
+;	>>>SET CONSOLE SL0
 ;
 ;   Note that you cannot use SLU1 as the console if a TU58 was detected at
 ; startup.  Also, the console setting is remembered in non-volatile RAM across
@@ -3769,14 +3718,14 @@ SETFM6:	LDN SP\ RETURN		; return the flag byte and we're done
 ; can always set SW0 to 1 to erase NVR and force the console to the default
 ; setting.
 ;
-;   Also note that SLU1 doesn't support autobaud, so whatever baud rate and
-; character format you've set (with "SET SLU1 ...") will apply to the new
+;   Also note that SL1 doesn't support autobaud, so whatever baud rate and
+; character format you've set (with "SET SL1 ...") will apply to the new
 ; console as well.  And SLU1 doesn't support flow control, so that won't
 ; happen.
 ;--
 SETCONS:CALL(ISSPAC)		; need a space after "CONSOLE"
 	LBNF	CMDERR		; ...
-	RLDI(P2,CONSTBL)	; point to the table of SLU0 or SLU1
+	RLDI(P2,CONSTBL)	; point to the table of SL0 or SL1
 	LBR	COMND		; and parse that
 
 ; Here to set the console back to the default SLU0 ...
@@ -3804,8 +3753,8 @@ SL1CNOT:OUTSTR(NOTALWD)		; ?NOT ALLOWED
 	RETURN			; and quit
 
 ; SET CONSOLE commands ...
-CONSTBL:CMD(4, "SLU0", SL0CONS)	; set console to the default SLU0
-	CMD(4, "SLU1", SL1CONS)	; set console to alternate SLU1
+CONSTBL:CMD(3, "SL0", SL0CONS)	; set console to the default SLU0
+	CMD(3, "SL1", SL1CONS)	; set console to alternate SLU1
 	.BYTE	0
 
 ; Messages ...
@@ -3900,16 +3849,17 @@ SHORAM:	CALL(F_FREEMEM)		; get the memory size from the BIOS
 ; byte.  The second byte is the bit mask for that option, and the remainder
 ; of each entry is the name of the option in ASCIZ.
 HWLIST:	.BYTE LOW(HWFLAGS+0), H1.TLIO, "TLIO",   0	; I/O group select
-HWSLU0:	.BYTE LOW(HWFLAGS+0), H1.SLU0, "SLU0",   0	; CDP1854   (base)
-HWSLU1:	.BYTE LOW(HWFLAGS+1), H0.SLU1, "SLU1",   0	; CDP1854   (expansion)
-HWIDE0:	.BYTE LOW(HWFLAGS+0), H1.IDE0, "IDE0",   0	; master disk drive
-HWIDE1:	.BYTE LOW(HWFLAGS+0), H1.IDE1, "IDE1",   0	; slave disk drive
+HWSLU0:	.BYTE LOW(HWFLAGS+0), H1.SLU0, "SL0",    0	; CDP1854   (base)
+HWSLU1:	.BYTE LOW(HWFLAGS+1), H0.SLU1, "SL1",    0	; CDP1854   (expansion)
+HWIDE0:	.BYTE LOW(HWFLAGS+0), H1.IDE0, "ID0",    0	; master disk drive
+HWIDE1:	.BYTE LOW(HWFLAGS+0), H1.IDE1, "ID1",    0	; slave disk drive
 HWTU58:	.BYTE LOW(HWFLAGS+1), H0.TU58, "TU58",   0	; serial TU58 disk
 HWRTC:	.BYTE LOW(HWFLAGS+0), H1.RTC,  "RTC",    0	; CDP1879   (base)
 HWPIC:	.BYTE LOW(HWFLAGS+0), H1.PIC,  "PIC",    0	; CDP1877   (base)
 HWPPI:	.BYTE LOW(HWFLAGS+1), H0.PPI,  "PPI",    0	; CDP1851   (expansion)
 HWTMR:	.BYTE LOW(HWFLAGS+1), H0.CTC,  "CTC",    0	; CDP1878   (expansion)
 HWPSG:	.BYTE LOW(HWFLAGS+1), H0.PSG,  "PSG",    0	; AY-3-8912 (expansion)
+HWLPT:	.BYTE LOW(HWFLAGS+1), H0.LPT,  "LPT",    0	; line printer
 	.BYTE 0		      	       		 	; end of table
 
 	.SBTTL	Test Hardware Configuration
@@ -4059,9 +4009,13 @@ SETRST:	CALL(ISEOL)\ LBDF CMDERR; and there had better be an argument there
 
 ;   Here to test for the SET RESTART dddd form of the command ...  If the
 ; argument isn't a device name, then it's wrong!
-SETRE1:	CALL(GETDEV)		; get the device number in D
+SETRE1:	CALL(F_LTRIM)		; skip any spaces
+	CALL(F_DEV2NUM)		; get the device number in D
+	LBDF	CMDERR		; bad device name
 	ORI	AB.BOOT		; set the mass storage boot flag
 	PUSHD			; and save that for a second
+	CALL(CHKDEV)		; check for a ':'
+	CALL(CHKEOL)		; and then look for end of line
 	RLDI(DP,BOOTF)		; point to the boot flag
 	POPD\ STR DP		; and store that option
 	RETURN			; after that, we're done ...
@@ -4093,7 +4047,8 @@ RESHLT:	INLMES("NONE")
 	LBR	TCRLF
 
 ; And here for RESTART ... ...
-RESBOO:	CALL(PRTDEV)		; print the device name
+RESBOO:	CALL(F_NUM2DEV)		; print the device name
+	CALL(F_MSG)		; ...
 	LBR	TCRLF		; finish the line and we're done
 
 	.SBTTL	SHOW CPU Command
@@ -4259,14 +4214,24 @@ SHOBOO:	PUSHD
 	POPD			; get the unit number back
 	CALL(F_SDREAD)		; read that sector
 	LBDF	TCRLF		; if it fails, then print CRLF and quit
-	CALL(BTCHK5)		; see if it contains an ElfOS v5 boot
+	CALL(F_BTCHK5)		; see if it contains an ElfOS v5 boot
 	LBDF	SHOBO1		; check for ElfOS v4 if it's not
 	OUTSTR(EV5VOL)		; say that it's ElfOS v5 bootable
-	LBR	TCRLF		; finish the line and we're done
-SHOBO1:	CALL(BTCHK4)		; check for ElfOS v4
+	LBR	SHOFST		; show the file system type
+SHOBO1:	CALL(F_BTCHK4)		; check for ElfOS v4
 	LBDF	TCRLF		; just say nothing if it's neither v5 nor v4
 	OUTSTR(EV4VOL)		; say ElfOS v4 bootable
-	LBR	TCRLF		; and we're done
+				; fall into SHOFST next
+
+;   Now show the ElfOS file system type (LAT-16 or LAT-32) for the current
+; disk. This assumes that boot sector, sector 0, has been loaded into RAM!
+SHOFST:	RLDI(P1,EO.FSTY)\ LDN P1; the byte at $104 is the file system type
+	SMI 1\ LBNZ SHOFS2	; is it type 1 (LAT-16) ?
+	RLDI(P1,FSTYP1)		; yes!
+	LBR	F_MSG		; say that and return
+SHOFS2:	SMI 1\ LBNZ TCRLF	; if it's not type 2 then give up
+	RLDI(P1,FSTYP2)		; type 2
+	LBR	F_MSG		; ...
 
 ; Here for any drive error ...
 DRVER1:	IRX			; fix the stack!
@@ -4286,6 +4251,8 @@ DERMSG:	.TEXT	"?DRIVE ERROR \000"
 NDRMSG:	.TEXT	"?NO DRIVES\r\n\000"
 EV5VOL:	.TEXT	" ElfOS v5\000"
 EV4VOL:	.TEXT	" ElfOS v4\000"
+FSTYP1:	.TEXT	" LAT-16\r\n\000"
+FSTYP2:	.TEXT	" LAT-32\r\n\000"
 
 	.SBTTL	SHOW TAPE Command
 
@@ -4386,7 +4353,7 @@ TSTPR3:	GLO P3\ STR SP\ SEX SP	; put the current column on the stack
 	GHI P3\ SD\ LBL TSTPR2	; have we exceeded the line width?
 	LDI	CH.LFD		; yes - print a line feed
 	CALL(F_PRTCHAR)		; ...
-	LBDF	TSTPR9		; just return if so
+	LBDF	TSTPR9		; just return if error
 	LDI 0\ PLO P3		; reset the current column
 	LBR	TSTPR2		; and keep printing
 
@@ -4673,17 +4640,17 @@ PRTPEK:	RLDI(DP,PASSK)		; point DP at the pass counter
 	INLMES(" ERRORS")	; ...
 	LBR	TCRLF		; finish the line and we're done
 
-	.SBTTL	TEST SLU Command
+	.SBTTL	TEST SERIAL Command
 
 ;++
-;   The "TEST SLU" command loops SLU0 and SLU1 together, so that anything
+;   The "TEST SERIAL" command loops SLU0 and SLU1 together, so that anything
 ; typed on one serial port is transmitted to the other one.  It's kind of
 ; basic, but it's an easy way to test whether the ports, especially SLU1,
 ; are working.  It's not as useful for testing SLU0 since that's the console
-; and it has to be working before you can type the "TEST SLU" command!
+; and it has to be working before you can type the "TEST SERIAL" command!
 ;
 ;   Note that the current settings of the serial ports (e.g. baud rate, 
-; character format, etc) are not changed.  Use the SET SLU0/1 command to set
+; character format, etc) are not changed.  Use the SET SL0/1 command to set
 ; baud rate and format that you want first!
 ;--
 SLULPB:	CALL(CHKEOL)		; no more arguments
@@ -5428,37 +5395,52 @@ FILENF:	.TEXT	"?FILE NOT FOUND\r\n\000"
 ; although that's not strictly necessary.  
 ;
 ;	<D=0 to select IDE master, D=1 to select IDE slave>
-;	CALL(IDEINI)
+;	CALL(DRVSEL)
 ;	<if error or timeout return with DF=1 and status register in D>
 ;
-; Uses (and does not preserve!) T1 ...
+; Uses (and does not preserve!) T1 and T3 ...
 ;--
-DRVSEL:	SHL\ SHL\ SHL\ SHL	; position the master/slave bit
-	ANI $10\ ORI ID.MST	; OR in the rest of the LBA bits
-	STR	SP		; save that on the stack
+DRVSEL:	PLO	T1		; save the drive number for later
 	OUTI(GROUP,BASEGRP)	; select the base board I/O group
+	CALL(WNBUSY)		; wait for access to the drive registers
+	LBDF	DRVSE9		; just quit now if failure
 	OUTI(IDESEL,IDELBA3)	; the drive select is in the LBA3 register
-	SEX SP\ OUT IDEBUF	; write the drive select
-	DEC SP\ LBR WREADY	; and wait for the drive to be ready
+	GLO T1\ ANI 1		; get the master/slave bit
+	LSNZ			; if zero select master drive
+	 OUT IDEBUF\ .BYTE ID.LBA|ID.MST
+	LSZ			; otherwise select slave drive
+	 OUT IDEBUF\ .BYTE ID.LBA|ID.SLV
+	CALL(WREADY)		; wait for the new drive to be ready
+	LBDF	DRVSE9		; failure
+	SDF\ ANI ID.DRQ+ID.IDX	; these status bits should not be set
+	LSNZ			; failure (no drive present)
+	 CDF			; success!
+DRVSE9:	RETURN 			; and we're done
 
 
 ;++
-;   This routine will "initialize" the currently selected IDE/ATA drive by a)
-; disabling interrupts, and b) selecting the 8 bit interface mode.  It has a
-; timeout (around 2.5 seconds with the 2.5MHz clock) and will return DF=1 if
-; any error or timeout occurs and DF=0 if all is well.
+;   This routine will "initialize" the currently selected IDE/ATA drive by 
+; selecting the 8 bit interface mode.  It will return DF=1 if any error or
+; timeout occurs and DF=0 if all is well.
 ;
 ;	<select the correct drive first!>
 ;	CALL(IDEINI)
 ;	<if error or timeout return with DF=1 and status register in D>
 ;
-; Uses (and does not preserve!) T1 ...
+; Uses (and does not preserve!) T1 and T3 ...
 ;--
-IDEINI:	OUTI(GROUP,BASEGRP)	; be sure the base board I/O group is selected
-	WRIDE(IDECTL,ID.NIE)	; clear reset, disable interrupts
-	WRIDE(IDEFEA,ID_8BT)	; select 8 bit mode
-	WRIDE(IDECMD,ID_FEA)	; and execute the SET FEATURES command
-				; fall into WREADY ...
+IDEINI:	OUTI(IDESEL,IDEFEA)	; select the IDE features register
+	OUT IDEBUF\ .BYTE ID_8BT; select 8 bit mode
+	OUT IDESEL\ .BYTE IDECMD; send set feature command
+	OUT IDEBUF\ .BYTE ID_FEA; ...
+	CALL(WREADY)		; wait until drive ready
+	LBDF	IDEIN9		; failure
+	SDF\ ANI ID.DRQ+ID.ERR	; these status bits should not be set
+	LSNZ			; failure (no drive present)
+	 CDF			; success!
+IDEIN9:	RETURN 			; and we're done
+
+	.SBTTL	Wait for IDE/ATA Drive
 
 ;++
 ;   This routine will wait, with a timeout, for the currently selected IDE
@@ -5466,6 +5448,10 @@ IDEINI:	OUTI(GROUP,BASEGRP)	; be sure the base board I/O group is selected
 ; status to be clear, and then we wait for the READY bit to be set.  Remember
 ; strictly speaking none of the other status bits, including READY or ERROR,
 ; are valid until BUSY is cleared.
+;
+;   Note that the timeout is 65280*16 machine cycles, or 8,355,840 clocks, or
+; about 1.67 seconds at 5MHz.  This is plenty for normal operations, but the
+; drive self test is allowed up to 30 seconds to complete.
 ;
 ;CALL:
 ;	CALL(WREADY)
@@ -5476,13 +5462,40 @@ IDEINI:	OUTI(GROUP,BASEGRP)	; be sure the base board I/O group is selected
 ;--
 WREADY:	RCLR(T3)		; keep the timeout count here
 WRDY0:	OUTI(IDESEL,IDESTS)	; select the status register
-WRDY1:	SEX SP\ INP IDEBUF	; read the drive status
-	ANI	ID.BSY+ID.RDY	; test the BUSY and READY bits
-	XRI	ID.RDY		; we want to see BUSY=0 and READY=1
-	LBNZ	WRDY2		; not yet - keep waiting
-	CDF\ LDX\ RETURN	; done - return DF=0 and drive status in D
-WRDY2:	DBNZ(T3,WRDY1)		; decrement the timeout and keep waiting
-WRDY3:	SDF\ LDI $FF\ RETURN	; timeout - return DF=1
+	SEX SP\ SDF		; assume failure
+	INP IDEBUF\ LBZ WRDY9	; fail immediately if status == 0
+WRDY1:	INP	IDEBUF		; [2] read the status bits
+	SMI ID.RDY\ SMI ID.RDY	; [4] look for busy clear and ready set
+	LBNF	WRDY9		; [3] success!
+	DEC T3\ GHI T3		; [4] decrement the timeout
+	LBNZ	WRDY1		; [3] and keep checking until it's zero
+WRDY9:	LDX\ RETURN		; return the status in D
+
+
+;++
+;   This routine will wait, with a timeout, for the currently selected IDE
+; drive to be "not busy".  Not busy means that the BUSY bit in the drive status
+; register is clear, and that it's now safe to access all the other drive
+; registers.  Not busy does NOT necessarily mean "done" or "ready"!
+;
+;   The timeout here, by accident more than anything else, is identical to the
+; timeout in WREADY.  That's because the main loop here happens to take the
+; same number of cycles as the one in WREADY.  
+;
+;CALL:
+;	CALL(WNBUSY)
+;	<if timeout return with DF=1>
+;	<return with drive status register in D>
+;
+; Uses (and does not preserve!) T3 ...
+;--
+WNBUSY:	RCLR(T3)		; keep the timeout count here
+WNBSY0:	OUTI(IDESEL,IDESTS)	; select the status register
+WNBSY1:	SEX SP\ INP IDEBUF	; [4] read the status bits
+	SMI ID.BSY\ LBNF WNBSY9	; [5] look for busy clear
+	DEC T3\ GHI T3		; [4] decrement the timeout
+	LBNZ	WNBSY1		; [3] and keep checking until it's zero
+WNBSY9:	LDX\ RETURN		; return the status in D
 
 	.SBTTL	Identify IDE/ATA Device
 
@@ -5526,50 +5539,30 @@ WRDY3:	SDF\ LDI $FF\ RETURN	; timeout - return DF=1
 
 ;   Set the sector count, LBA0, 1 and 2 registers to zero and then send the
 ; IDENTIFY DEVICE command to the command register ...
-DISKID:	CALL(WREADY)		 ; be sure the drive is ready first
-	LBDF	DSKI98		 ;  ... quit now if error
-	SEX	PC		 ; do a bunch of inline OUTs
-	OUT IDESEL\ .BYTE IDESCT ; sector count == 0
-	OUT IDEBUF\ .BYTE 0	 ; ...
-	OUT IDESEL\ .BYTE IDELBA0; LBA0 == 0
-	OUT IDEBUF\ .BYTE 0	 ; ...
-	OUT IDESEL\ .BYTE IDELBA1; LBA1 == 0
-	OUT IDEBUF\ .BYTE 0	 ; ...
-	OUT IDESEL\ .BYTE IDELBA2; LBA2 == 0
-	OUT IDEBUF\ .BYTE 0	 ; ...
-	OUT IDESEL\ .BYTE IDECMD ; and write the command
-	OUT IDEBUF\ .BYTE ID_IDD ; ...
+DISKID:	OUTI(IDESEL,IDECMD)	; send the IDENTIFY DEVICE command
+	OUT IDEBUF\ .BYTE ID_IDD; ...
+	CALL(WREADY)		; wait for the drive to finish
+	LBDF	DSKI99		; ...
+	ANI	ID.DRQ|ID.ERR	; DRQ should be set and ERROR clear
+	XRI	ID.DRQ		; ...
+	LBNZ	DSKI99		; failure
 
-; Wait for the drive to finish ...
-	RCLR(T1)		; keep the timeout counter here
-DSKI10:	RDIDE(IDESTS)		; read the current IDE status
-	LBZ	DSKI99		; no drive if we find all zeros
-	ANI	ID.BSY		; is BUSY still set?
-	LBNZ	DSKI11		; yes - keep waiting
-	LDN SP\ ANI ID.ERR	; error?
-	LBNZ	DSKI99		; yes - quit now
-	LDN SP\ ANI ID.DRQ	; ready to transfer data?
-	LBNZ	DSKI20		; yes - go read the drive identity
-DSKI11:	DBNZ(T1,DSKI10)		; count down the timeout
-	LDI $FF\ LBR DSKI98	; timeout - take the error return
-
-; Here for any disk error ...
-DSKI99:	RDIDE(IDEERR)		; read the IDE error register
-DSKI98:	SDF\ RETURN		; return error for no drive found
-
-;   Skip 54 bytes and then extract the next 40 bytes which are the manufacturer
+;   Skip 27 words and then extract the next 40 bytes which are the manufacturer
 ; name and model number.  Note that we have to swap character pairs here - I
-; think that's because the drive that believes it's returning words, but since
-; the interface is set to 8 bits it returns the low order byte first, then the
+; think that's because the drive believes it's returning words, but since the
+; interface is set to 8 bits it returns the low order byte first, then the
 ; high byte.  This causes every pair of characters to be swapped ...
-DSKI20:	CALL(IDDFLS)		; skip bytes until the model string
-	 .WORD	 ID_MOD		;  ...
+	OUTI(IDESEL,IDEDATA)	; select the IDE data register
+	LDI ID_MOD/2\ PLO T1	; skip 27 words
+	SEX	SP		; point to a scratch area on the stack
+DSKI20:	INP IDEBUF\ INP IDEBUF	; read and discard one word
+	DEC T1\ GLO T1		; have we done them all?
+	LBNZ	DSKI20		; no - keep reading
 	LDI ID_MDL/2\ PLO T1	; copy 40 bytes (the entire model string)
-	OUTI(IDESEL,IDEDATA)	; select the data port
-DSKI21:	SEX SP\ INP IDEBUF	; read a data byte and save it on the stack
-	DEC SP\ INP IDEBUF	; then read the second byte too
-	STR P1\ INC P1\ INC SP	; store the second byte first
-	LDN SP\ STR P1\ INC P1	; and then store the first byte
+	SEX	P1		; store this data in the caller's buffer
+DSKI21:	INP IDEBUF\ PHI T1	; read a data byte and save it
+	INP IDEBUF\ INC P1	; then read and store the second byte
+	GHI T1\ STR P1\ INC P1	; then store the first byte second
 	DEC T1\ GLO T1		; have we copied 40 bytes?
 	LBNZ	DSKI21		;  ... loop until we have
 	LDI 0\ STR P1		; make sure the string is null terminated
@@ -5577,10 +5570,15 @@ DSKI21:	SEX SP\ INP IDEBUF	; read a data byte and save it on the stack
 ;   Now skip bytes until we get to words 60 and 61, which are the total number
 ; of addressable sectors in LBA mode.  That's actually a 32 bit value, but we
 ; convert the number of sectors to megabytes by dividing by 2^11.  Dividing by
-; 2^8 is easy - we just shift the bytes right one byte, and then we divide by
-; 2^3 using a sixteen bit right shift.
-	CALL(IDDFLS)		; skip more bytes until the sector count
-	 .WORD	 ID_LBA-ID_MOD-ID_MDL
+; 2^8 is easy - we just shift right one byte, and then we divide by 2^3 using
+; a three bit right shift.
+	LDI (ID_LBA-ID_MOD-ID_MDL)/2
+	PLO T1\ SEX SP		; store the number of words to skip
+DSKI30:	INP IDEBUF\ INP IDEBUF	; read and discard one word
+	DEC T1\ GLO T1		; have we done enough?
+	LBNZ	DSKI30		; keep reading
+
+; Now read a longword for the disk size an divide by 2^11 ...
 	INP IDEBUF\ PLO T1	; the next 4 bytes are the total
 	INP IDEBUF\ PHI T1	;  ... number of sectors
 	INP IDEBUF\ PLO T2	;  ...
@@ -5589,96 +5587,22 @@ DSKI21:	SEX SP\ INP IDEBUF	; read a data byte and save it on the stack
 	GLO T2\ PHI P2		;  ... and copy 16 bits to P2
 	GHI T2\ PHI T3		; put the last 4 bits in T3.1
 	LDI 3\ PLO T3		; shift right 3 more bits
-DSKI30:	GHI T3\ SHR\ PHI T3	; start with the MSB and shift that
+DSKI31:	GHI T3\ SHR\ PHI T3	; start with the MSB and shift that
 	RSHRC(P2)		; shift a bit into P2
 	DEC T3\ GLO T3		; have we done this 3 times?
-	LBNZ	DSKI30		; no - keep looping
+	LBNZ	DSKI31		; no - keep looping
 
-; Flush the rest of the identity data and we're done ...
-	CALL(IDDFLS)		; discard bytes until DRQ goes away
-	 .WORD	 DSKBSZ		;  ... should be big enough!
-	LBZ	WREADY		; then be sure the drive is ready
-
-;++
-;   This routine will read and flush a specific number of data bytes from the
-; disk drive.  It's used during the IDENTIFY DEVICE command to skip the stuff
-; we're not interested in.
-;
-;	CALL(IDDFLS)
-;	 .WORD	 <count of bytes to skip>
-;
-;   Note that if we ever find a time when the DRQ bit is NOT set then we'll
-; return immediately, regardless of the count.  We use this at the end of the
-; DISKID function to skip any remaining data in the drive's buffer.
-;
-;   Uses (and does not preserve!) T3 ...
-;--
-IDDFLS:	RLDA(T3,A)		; pick up the number of bytes to skip
-IDDFL1:	RDIDE(IDESTS)		; read the drive status
-	ANI ID.DRQ\ LBZ IDDFL2	; quit if DRQ goes away
-	OUTI(IDESEL,IDEDATA)	; read the data port next
-	SEX SP\ INP IDEBUF	; read and discard one byte
-	DBNZ(T3,IDDFL1)		; and keep flushing until the count is zero	
-IDDFL2:	RETURN			; all done
-
-	.SBTTL	Check for ElfOS Boot Sector
-
-;++
-;   This routine will test an ElfOS v5 boot sector for validity.  It assumes
-; the boot sector has been loaded into RAM at $0100 and it will return DF=0
-; if it's a valid boot sector (i.e. no error).
-;
-;CALL:
-;	<load boot sector into RAM at $0100>
-;	CALL(BTCHK5)
-;	<return with DF=0 if a valid boot sector>
-;
-;   Note that for ElfOS v5 the entire boot sector is checksummed (as opposed to
-; v4, which checksums only a small part of it) so an ElfOS v4 (and also David
-; Madole's MiniDOS, which is based on a v4 fork) boot sector will fail!
-;--
-BTCHK5:	RLDI(P1,EO.BBUF)	; P1 = $100 (boot sector)
-	RLDI(P3,511)		; P3 = 511 ($1FF) byte count
-	LDI $FF\ STR SP		; set initial checksum to $FF
-BTCLP5:	LDA P1\ ADD		; add the next byte from the sector
-	PLO BAUD\ SHL		; ring shift the check value
-	GLO BAUD\ SHLC\ STR SP	; update the check value on the stack
-	DBNZ(P3,BTCLP5)		; loop until we've done the entire sector
-	LDN P1\ SM		; compare stored check byte to computed value
-	LBNZ	BTCFAIL		; and fail if it's not zero
-	CDF\ RETURN		; success!
-BTCFAIL:SDF\ RETURN		; failure
-
-
-;++
-;   This routine will test an ElfOS v4 boot sector for validity.  It assumes
-; the boot sector has been loaded into RAM at $0100 and it will return DF=0
-; if it's a valid boot sector (i.e. no error).
-;
-;CALL:
-;	<load boot sector into RAM at $0100>
-;	CALL(BTCHK5)
-;	<return with DF=0 if a valid boot sector>
-;
-;   Note that for ElfOS v4 only a small part (the first $41 bytes to be exact)
-; of the boot sector is checksummed.  This test will FAIL for an ElfOS v5 
-; boot sector.
-;
-;   HOWEVER, further note that an ElfOS v5 boot sector WILL pass this test
-; (usually, at least, altough that isn't always guaranteed) so if you want to
-; test for both then call BTCHK5 first!
-;--
-BTCHK4:	RLDI(P1,EO.BBUF)	; point to the boot sector in RAM
-	LDI $41\ PLO P3		; number of bytes to check
-	LDI 0\ PLO P2		; initial checksum value
-BTCLP4:	GLO P2\ SEX P1\ ADD	; add the next byte
-	IRX			; ...
-	SHL\ SHR\ SHLC\ PLO P2	; ring shift
-	DEC	P3		; decrement the byte count
-	GLO P3\ LBNZ BTCLP4	; loop until we've done all the bytes
-	GLO P2\ SMI $60		; compare checksum against magic value
-	LBNZ	BTCFAIL		; fail if it doesn't match
-	CDF\ RETURN		; success!
+;   We have everything we need, but there's still a lot data waiting in the
+; drive's buffer.  We need to read and discard all those bytes.  In theory
+; there should be 194 words (388) bytes remaining, but we'll discard 200 just
+; to be safe.  Reading extra bytes (more than 512) from the drive data register
+; does nothing; it just returns garbage.
+	LDI 200\ PLO T1\ SEX SP	; flush 200 words (400 bytes)
+DSKI40:	INP IDEBUF\ INP IDEBUF	; read and discard two byte
+	DEC T1\ GLO T1		; decrement the count
+	LBNZ	DSKI40		; and keep looping
+	CDF			; return success
+DSKI99:	RETURN			; and we're done
 
 	.SBTTL	Determine TU58 Size
 
@@ -5784,6 +5708,17 @@ CHKEOL:	CALL(ISEOL)		; look for the end of line next
 	LBNF	CMDERR		; abort this command if it's not
 	RETURN			; otherwise do nothing
 
+;++
+;   Verify that the next command character (pointed to by P1) is either a
+; ":", a space or EOL.  If it isn't one of those three, then jump to CMDERR
+; and never return.  This is used after a call to F_DEV2NUM to parse a
+; device name ...
+;--
+CHKDEV:	LDA P1\ SMI ':'		; assume it's a ':'
+	LBZ	CHKDE9		; return now if we're right
+	DEC P1\ CALL(ISSPAC)	; no - check for space or EOL
+	LBNF	CMDERR		; not space or EOL - error
+CHKDE9:	RETURN			; success
 
 ;++
 ;   This routine will examine the ASCII character in D and, if it is a lower
@@ -5839,14 +5774,14 @@ ISHEX3:	GLO	BAUD		; get the original character back
 ; in the source, or when it exhausts the byte count.  The destination string
 ; is always left null terminated in either case.
 ;--
-STRNCPY:LDA P1\ STR P2\ INC P2	; copy one byte
-	LBZ	STRRET		; quit if we found EOS
-	DEC	P3		; decrement the count
-	GHI P3\ LBNZ STRNCPY	; keep copying if it's not zero
-	GLO P3\ XRI 1		; is there only 1 byte left?
-	LBNZ	STRNCPY		; no - more copying
-	STR	P2		; yes - null terminte the destination
-STRRET:	RETURN			; and we're done
+;;STRNCPY:LDA P1\ STR P2\ INC P2	; copy one byte
+;;	LBZ	STRRET		; quit if we found EOS
+;;	DEC	P3		; decrement the count
+;;	GHI P3\ LBNZ STRNCPY	; keep copying if it's not zero
+;;	GLO P3\ XRI 1		; is there only 1 byte left?
+;;	LBNZ	STRNCPY		; no - more copying
+;;	STR	P2		; yes - null terminte the destination
+;;	RETURN			; and we're done
 
 ;++
 ;   The BIOS has a ltrim function but not an rtrim, so here's another one of
@@ -5864,7 +5799,7 @@ RTRIM:	LDN P1\ DEC P1		; get a byte and back up
 	LBZ	RTRIM		; yes - keep backing up
 	LDI	0		; no - store an EOS in memory
 	INC P1\ INC P1\ STR P1	; in the last non-null byte
-	RETURN
+STRRET:	RETURN
 
 	.SBTTL	Scan Command Parameter Lists
 

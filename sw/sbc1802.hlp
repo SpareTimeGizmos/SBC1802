@@ -43,20 +43,21 @@
 #			Add SET CONSOLE SLU0|SLU1
 # 24-MAR-25	RLA	Add TEST PRINTER
 #			Prune stuff to fit in memory!
+#  3-MAY-25	RLA	Change SLU0/1 to SL0/1 and SLU to SERIAL
 #--
 MEMORY AND I/O COMMANDS
     Examine addr		-- examine one byte
-    Examine start end		-- dump a range of bytes
+    Examine start end		-- dump range of bytes
     Deposit addr data ...	-- deposit in memory
-    INput port [group]		-- read from an I/O port
-    OUtput port data [group]	-- write to an I/O port
+    INput port [group]		-- read from I/O port
+    OUtput port data [group]	-- write to I/O port
     XSave start end		-- upload RAM with XMODEM
     XLoad start end		-- download RAM with XMODEM
     CHecksum start end		-- checksum memory
     FIll [start end [data]]	-- fill memory
-    ERom addr			-- examine ROM
+    ERom addr			-- examine EPROM
     DRom addr data ...		-- patch EEPROM
-    :llaaaattdddd..cc		-- load an INTEL hex record
+    :llaaaattdddd..cc		-- load INTEL hex record
 
 PROGRAM CONTROL COMMANDS
     BASic		-- start ROM BASIC
@@ -66,7 +67,7 @@ PROGRAM CONTROL COMMANDS
 
 MASS STORAGE COMMANDS
     DUmp ddd: nnnnn	-- dump device block
-    Boot ddd:		-- Boot ELfOS
+    Boot [ddd:]		-- Boot ELfOS
     FORMAT ddd:		-- zero device
 
 MICRODOS COMMANDS
@@ -82,10 +83,10 @@ SET COMMANDS
     SEt RTC mm/dd/yyyy hh:mm:ss	-- set RTC date and time
     SEt YEar yyyy		-- update the RTC year
     SEt OStype ELFos|MICrodos	-- select the memory map
-    SEt SLU0 bbbbb		-- set the console baud rate
-    SEt SLU1 bbbbb [xYz]	-- set SLU1 baud and format
-    SEt SLU0 RTS|NORTS		-- enable or disable flow control
-    SEt CONsole SLU0|SLU1	-- redirect console to SLU1
+    SEt SL0 bbbbb		-- set the console baud rate
+    SEt SL1 bbbbb [xYz]		-- set SL1 baud and format
+    SEt SL0 RTS|NORTS		-- enable or disable flow control
+    SEt CONsole SL0|SL1		-- redirect console to SL1
     SEt REStart ddd		-- auto boot from device
     SEt REStart xxxx		-- start program on power up
     SEt NOREStart		-- power up to this monitor
@@ -95,7 +96,7 @@ SHOW COMMANDS
     SHow DP		-- show monitor data
     SHow RTC		-- show current date and time
     SHow EF group	-- show all EF inputs
-    SHow SLU		-- show serial port settings
+    SHow SERial		-- show serial port settings
     SHow CONFiguration	-- show hardware configuration
     SHow OStype		-- show current memory map
     SHow BATtery	-- show backup battery status
@@ -109,8 +110,8 @@ TEST COMMANDS
     TEst RAM0|RAM1	-- test RAM chip
     TEst ROM		-- test ROM chip
     TEst PSG		-- test sound generator
-    TEst SLU		-- loop SLU0 and SLU1
-    TEst PRInter [wid]	-- test parallel printer
+    TEst SERial		-- loop SL0 and SL1
+    TEst PRInter [width]-- test parallel printer
 
 OTHER COMMANDS
     HElp		-- print this text

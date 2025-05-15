@@ -1,0 +1,369 @@
+			SBC1802 FIRMWARE BIOS NOTES
+			---------------------------
+
+--------------------
+DEPRECATED FUNCTIONS
+--------------------
+  These functions are no longer used and have been removed from the SBC1802
+BIOS.  Calling any of them will generate an ?UNIMPLEMENTED BIOS FUNCTION error
+message.
+
+  F_FINDTKN, F_IDNUM,  F_IDESIZE, F_IDEID, F_DTTOAS,  F_TMTOAS
+  F_RTCTEST, F_ASTODT, F_ASTOTM,  F_TYPEX, F_WRTSEC,  F_RDSEC
+  F_SEEK0,   F_SEEK,   F_DRIVE,   F_MOVER, F_SDRESET, F_SDSIZE
+
+  The SBC1802 has no official NVR, although all of RAM is non-volatile if you
+have the battery backup installed.  Because of that these functions all return
+failure (DF=1) but they are not technically "deprecated".
+
+  F_RDNVR,   F_WRNVR,  F_NVRCCHK
+
+------------------
+NEW BIOS FUNCTIONS
+------------------
+  The SBC1802 implements several new, "manufacturer specific" BIOS functions,
+especially to work with SBC1802 specific hardware.  These functions all are
+assigned vectors in the $F0xx manufacturer specific table and their entry
+points are defined in the bios.inc included with the SBC1802 firmware.
+
+  The new functions are
+
+  $F000	F_TRAP     - breakpoint trap vector
+  $F003	F_CONTINUE - restore user context and continue
+  $F006	F_RUN      - run user program (with P=0)
+  $F009	F_TUINIT   - initialize TU58
+  $F00C	F_TUREAD   - read TU58 sector
+  $F00F	F_TUWRITE  - write TU58 sector
+  $F012	F_SL1OUT   - blocking output to SLU1
+  $F015	F_SL1HIT   - test SLU1 for input
+  $F018	F_SL1IN    - blocking read w/o echo
+  $F01B	F_SL1GET   - blocking read with echo
+  $F01E	F_SL1NBR   - non-blocking read w/o echo
+  $F021	F_TESTHWF  - test SBC1802 hardware flags
+  $F024	F_PRTINIT  - initialize parallel port and printer
+  $F027	F_PRTCHAR  - print one ASCII character
+  $F02A	F_PRTTEXT  - print null terminated string
+  $F02D	F_PRTSTAT  - return printer status bits
+
+  The SBC1802 firmware also replaces the deprecated F_RDSEC and F_WRTSEC
+functions with two new functions to translate SBC1802 device names.
+
+  $FF1E F_DEV2NUM  - translate an ASCII device name to internal device number
+  $FF21 F_NUM2DEV  - translate internal device number to ASCII
+
+		   NEW FUNCTIONS DETAILED DESCRIPTIONS
+		   -----------------------------------
+
+--------------------------------------------------------------------------------
+$F000	F_TRAP - SBC1802 debugger trap vector
+
+CALL:
+	MARK\ SEP R1
+	<"returns" if CONTINUE is typed>
+	
+  This vector is used by the SBC1802 firmware for a breakpoint trap.  The
+vector address is loaded into R1 by the monitor GO, CALL and BOOT commands and,
+provided nobody changes R1, you can trap back to the firmware with with the
+sequence MARK and SEP R1.  All registers will be preserved and you can resume
+execution of your program after a trap with the CONTINUE command.
+
+  Note that the standard BIOS call F_MINIMON effectively calls this entry
+point, HOWEVER this entry does not depend on R1 being set and the caller's
+original PC will be lost and the PC of F_MINIMON will be saved instead.  The
+caller's other registers are saved however, and if F_MINIMON was invoked with
+a CALL then you can recover the original PC from R6.
+
+--------------------------------------------------------------------------------
+$F003	F_CONTINUE - restore user context and continue
+
+CALL:
+	<D contains the desired memory map (either MC.ELOS or MC.MDOS)>
+	<the REGS area, et al, in the BIOS RAM contains the user context>
+	CALL(F_CONTINUE)
+	<never returns - jumps to the user's program instead!>
+
+  This vector is used by the firmware to transfer control to a user program.
+All the user's registers, including X and P, are restored from the context
+saved in the BIOS RAM area.
+  
+--------------------------------------------------------------------------------
+$F006	F_RUN - run user program (with P=0)
+
+CALL:
+	<D contains the desired memory map (either MC.ELOS or MC.MDOS)?
+	<R0 contains the user program starting address>
+	CALL(F_RUN)
+	<never returns - jumps to the user's program instead!>
+
+   The BIOS F_RUN entry will run a user program using P=R0 and with pretty much
+the same conditions that you would get after a 1802 hardware reset.  The
+caller should pass the desired memory map, usually either MC.ELOS or MC.MDOS,
+in D and the desired starting address in R0.  Unlike F_CONTINUE, this routine
+DOES NOT use the previous user context saved at REGS et al.
+
+--------------------------------------------------------------------------------
+$F009	F_TUINIT - initialize TU58
+
+CALL:
+	CALL(F_TUINIT)
+	<return with DF=0 if the drive is ready>
+
+   This routine will initialize any TU58 drive attached to the secondary serial
+port SLU1.  If it's successful and the drive responds then it returns with DF
+cleared, and if there are any errors or if there's no response from the
+drive then DF will be set.
+
+   Note that we do not set, nor do we change, the SLU1 baud rate or character
+format.  By default these are set to 9600bps and 8N1, however you can change
+that with the SET SLU1 ... command.  Whatever is established before TUINIT
+is called, we'll stick with.
+
+--------------------------------------------------------------------------------
+$F00C	F_TUREAD - read TU58 sector
+
+CALL:
+	<D contains the unit number>
+	<R8:R7 contains the block number>
+	<RF points to the caller's buffer>
+	CALL(F_TUREAD)
+	<return with DF=0 if successful>
+
+   This routine will read exactly one sector, 512 bytes, from the TU58 drive.
+On call the registers (see above) specify the unit and block number, and the
+address of a buffer in RAM.  A real TU58 drive only has units 0 or 1 and
+tapes only contain 512 blocks, but everybody is using TU58 emulators these
+days.  Those allow for unit numbers up to 255 and up to 65536 blocks, so we
+don't range check either argument.  If any error occurs we return with DF
+flag set and an error code from the TU58 in D.  If the read is successful
+then DF will be clear on return.
+
+  Note that the ElfOS BIOS API allows for 32 bit mass storage block numbers,
+but RSP only allows for 16 bits, so R8 is almost ignored.  "Almost" because
+MiniDOS' format program attempts to discover the size of a drive by trying 
+to read non-existent blocks.  Because of that we have to check R8 for all
+zeros and take the error return if it isn't.  Also note that, in keeping
+with the BIOS API, we always read exactly one block, and never more or less.
+
+  BTW, you should be sure to call TUINIT before calling this routine!
+
+NOTES
+  This routine is hardwired to always read 512 bytes, the standard disk
+sector size.  However you can easily change that by removing the
+"RLDI(P2,...)" below and passing the byte count in P2.  HOWEVER, having
+said that, be aware that the code DOES assume all transfers are multiples
+of 128 bytes!  That's because it uses P2 to count both the bytes in this
+record AND the total bytes.
+
+--------------------------------------------------------------------------------
+$F00F	F_TUWRITE - write TU58 sector
+
+CALL:
+	<D contains the unit number>
+	<R8:R7 contains the block number>
+	<RF points to the caller's buffer>
+	CALL(F_TUWRITE)
+	<return with DF=0 if all is well>
+
+   This routine will write exactly one 512 byte data record to the TU58 drive.
+Except for the direction of data transfer the parameter setup is identical to
+TUREAD.  If any error occurs we return with DF set and an error code from the
+TU58 in D.  If the data is read successfully then DF will be clear on return.
+
+  BTW, you should be sure to call TUINIT before calling this routine!
+
+--------------------------------------------------------------------------------
+$F012	F_SL1OUT - blocking output to SLU1
+
+CALL:
+	<D contains the character to output>
+	CALL(F_SL1OUT)
+	<always return, D is preserved>
+	
+   This routine writes one byte from D to the auxiliary UART SLU1.  If the
+UART transmitter is currently busy, then we'll wait until it's finished.
+Note that this returns with the original character still in D, unchanged.
+Except for the serial port used, this is exactly equivalent to the CONOUT or
+F_TYPE function.
+
+--------------------------------------------------------------------------------
+$F015	F_SL1HIT - test SLU1 for input
+
+CALL:
+	CALL(F_SL1HIT)
+	<return DF=1 if SLU1 has a character waiting to be read>
+	
+   Test to see if the auxiliary UART has a character ready to be read, and 
+return with DF=1 if it does.  Don't wait, and don't actually read the
+character.  Except for the serial port used, this is exactly equivalent to the
+CONHIT or F_BRKTEST function.
+
+--------------------------------------------------------------------------------
+$F018	F_SL1IN - blocking read w/o echo
+
+CALL:
+	CALL(F_SL1IN)
+	<return with character read in D>
+	
+   Read one character from the auxiliary UART and return it in D, waiting for
+one to become available if necessary.  The character read is NEVER echoed.
+Except for the serial port used, this is exactly equivalent to the CONIN
+function.
+
+--------------------------------------------------------------------------------
+$F01B	F_SL1GET - blocking read with echo
+
+CALL:
+	CALL(F_SL1GET)
+	<return with character read in D>
+	
+  This routine is the same as SL1IN, however this one DOES echo the input,
+but only if the echo flag in BAUD.1 is set.  Except for the serial port used,
+this is exactly equivalent to the CONGET or F_READ function.
+
+--------------------------------------------------------------------------------
+$F01E	F_SL1NBR - non-blocking read w/o echo
+
+CALL:
+	CALL(F_SL1NBR)
+	<return with character read in D>
+	
+  Non-blocking read one character from the auxiliary UART.  If no character
+is waiting in the UART buffer, then return immediately with DF=0.  If there
+is a character, then read it, echo it, and return it with DF=1.  Except for
+the serial port used, this is exactly equivalent to the NBREAD or F_NBREAD
+function.
+
+--------------------------------------------------------------------------------
+$F021	F_TESTHWF - test SBC1802 hardware flags
+
+CALL:
+	CALL(F_TESTHW)
+	 .BYTE	<H1 flags>,<H0 flags>
+	<DF=0 if all option(s) installed, DF=1 if not>
+
+  This routine will check whether a particular hardware option is installed
+on this system.  The argument, which is passed inline, is a mask of the
+HWFLAGS bits to test.  Remember that all the H1.xxx bits are in the most
+significant byte of HWFLAGS, and the H0.xxx bits are in the LSB.  And
+remember that the 1802 is a big endian machine, so the inline argument is
+passed MSB first!
+
+  The hardware flag bits, which are defined in sbc1802.inc, are
+
+  ; HIGH BYTE BITS
+  H1.TLIO .EQU	BIT7	; I/O group select hardware present
+  H1.SLU0 .EQU	BIT6	; CDP1854 console serial line unit present
+  H1.PIC  .EQU	BIT5	; CDP1877 priority interrupt controller present
+  H1.RTC  .EQU	BIT4	; CDP1879 real time clock present
+  			; bits 3..2 are unused
+  H1.IDE1 .EQU	BIT1	; IDE/ATA slave drive present
+  H1.IDE0 .EQU	BIT0	; IDE/ATA master drive present
+  ; LOW BYTE BITS
+  H0.SLU1 .EQU	BIT7	; CDP1854 communication serial line unit present
+  H0.PPI  .EQU	BIT6	; CDP1851 programmable parallel interface present
+  H0.TU58 .EQU	BIT5	; set by F_TUINIT when a TU58 drive is detected
+  H0.PSG  .EQU	BIT4	; AY-3-8912 programmable sound generator present
+  H0.CTC  .EQU	BIT3	; CDP1878 programmable timer/counter present
+  H0.LPT  .EQU	BIT2	; set by F_PRTINIT when a printer is detected
+  			; bits 1..0 are unused
+
+  And finally, if more than one bit is set in the mask, then the result is an
+AND of all bits - in other words, ALL options specified must be present for a
+successful return.
+
+--------------------------------------------------------------------------------
+$F024	F_PRTINIT - initialize parallel port and printer
+
+CALL:
+	CALL(F_PRTINIT)
+	<return DF=1 if error>
+
+  This routine will initialize the parallel port printer interface.  It
+configures the CDP1851 PPI properly to talk to the printer, asserts the SELECT
+OUT and INIT lines, waits a moment for the printer to reset, and then checks
+for a SELECT IN response from the printer.  It returns DF=0 if all is well, and
+DF=1 if there's a problem.
+
+--------------------------------------------------------------------------------
+$F027	F_PRTCHAR - print one ASCII character
+
+CALL:
+	<D contains the character to print>
+	CALL(F_PRTCHAR)
+	<return DF=1 if error, D is preserved>
+
+  This routine will print a single character to the parallel port printer.
+It waits for the printer not to be busy, outputs the data, pulses the STROBE
+signal, and then waits for the printer to assert BUSY.  Note that this
+assumes that you've called F_PRTINIT first.  This routine doesn't actually
+check that the PPI is installed, but it does have a timeout and will return
+with DF=1 if the printer doesn't respond.
+
+--------------------------------------------------------------------------------
+$F02A	F_PRTTEXT - print null terminated string
+
+CALL:
+	<RF points to a null terminated string>
+	CALL(F_PRTTEXT)
+	<return DF=1 if error>
+
+  This routine sends a null terminated string to the printer, similar to
+F_MSG.  It just calls PRTCHAR in a loop ...
+
+--------------------------------------------------------------------------------
+$F02D	F_PRTSTAT - return printer status bits
+
+CALL:
+	CALL(F_PRTSTAT)
+	<return status bits in D>
+
+  This routine will return the current printer status bits, especially the
+PAPER OUT, SELECT IN and ERROR bits.  Note that it does not return the BUSY
+nor the ACK bits!
+
+  The bits in D correspond to -
+
+	bits 0..1 -> unused
+	bit 2	  -> selected (i.e. printer present and turned on)
+	bit 3	  -> printer error
+	bit 4	  -> out of paper
+	bits 5..7 -> unused
+
+--------------------------------------------------------------------------------
+$FF1E	F_DEV2NUM  - translate an ASCII device name to internal device number
+
+CALL:
+	RF/ address of first letter of device name
+	CALL(F_DEV2NUM)
+	<return with device number in D, or DF=1 if unknown>
+
+   The DEV2NUM call translates an ASCII device name (e.g. "ID0", "TU1", etc)
+into the corresponding device number for a call to F_SDREAD/SDWRITE or the
+F_IDEREAD/F_IDEWRITE calls.  It expects a pointer to first letter of the
+device name in RF, and returns the corresponding device number in D.  If
+the name is unknown, then the error (DF=1) return is taken instead.
+
+   Note that on return RF will be updated to point to the first character in
+the string which is NOT part of the device name.  For example, conside the
+string "//id1/foo/baz" - on call, RF should point to the "i" after the "//"
+and on return RF will point to the "/" after the "id1".
+
+   In the case of no match the values returned in D and RF both are undefined.
+
+   And lastly, note that the match is case insensitive so "ID0" and "id0" will
+both work.
+
+--------------------------------------------------------------------------------
+$FF21	F_NUM2DEV  - translate internal device number to ASCII
+
+CALL:
+	D/ device number
+	CALL(F_NUM2DEV)
+	<return with string pointer in RF, or DF=1 if out of range>
+
+   The NUM2DEV function will return an ASCIZ string corresponding to the device
+number passed in D.  On return RF will point to a null terminated ASCII string.
+This string is almost certainly stored in ROM, so the caller can't change it
+but it can be copied or printed.  If the device number passed in D is out of
+range, then the error (DF=1) return is taken and the contents of RF are
+undefined.
